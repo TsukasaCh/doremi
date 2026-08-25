@@ -117,6 +117,13 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 5px; font-si
 
 pre.ovpn { background: #0a0e13; border: 1px solid var(--border); border-radius: 8px; padding: 12px; max-height: 300px; overflow: auto; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
 
+/* ACL group chips */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 13px; }
+.chip-x { padding: 0 6px; font-size: 12px; line-height: 1.4; border-radius: 999px; border: none; background: transparent; color: var(--red); }
+.chip-x:hover { background: #2a1a1e; }
+.modal h3 { color: var(--text); }
+
 /* Toast */
 .toast { position: fixed; bottom: 24px; right: 24px; background: var(--panel-2); border: 1px solid var(--border); padding: 12px 18px; border-radius: 10px; z-index: 100; max-width: 400px; }
 .toast.ok { border-color: var(--green); }

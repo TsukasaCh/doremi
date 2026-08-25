@@ -41,6 +41,30 @@ CREATE TABLE IF NOT EXISTS audit_log (
   detail     TEXT,
   ok         INTEGER NOT NULL DEFAULT 1
 );
+
+-- Reusable ACL rule groups (templates applied to many users, kept live)
+CREATE TABLE IF NOT EXISTS acl_groups (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT UNIQUE NOT NULL,
+  description TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS acl_group_rules (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id INTEGER NOT NULL REFERENCES acl_groups(id) ON DELETE CASCADE,
+  action   TEXT NOT NULL,
+  dst      TEXT NOT NULL,
+  proto    TEXT NOT NULL DEFAULT 'all',
+  port     TEXT
+);
+
+-- Which groups are assigned to which users (many-to-many)
+CREATE TABLE IF NOT EXISTS user_acl_groups (
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  group_id INTEGER NOT NULL REFERENCES acl_groups(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, group_id)
+);
 `);
 
 export function audit(actor, action, target, detail, ok = true) {

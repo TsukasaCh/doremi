@@ -12,7 +12,14 @@ function serializeUser(u) {
   const rules = db
     .prepare('SELECT id, action, dst, proto, port, applied FROM acl_rules WHERE user_id = ?')
     .all(u.id);
-  return { ...u, acl: rules };
+  const groups = db
+    .prepare(
+      `SELECT g.id, g.name FROM user_acl_groups uag
+         JOIN acl_groups g ON g.id = uag.group_id
+        WHERE uag.user_id = ? ORDER BY g.name`
+    )
+    .all(u.id);
+  return { ...u, acl: rules, groups };
 }
 
 // GET /api/users  — list all users with their ACL

@@ -62,9 +62,13 @@ $('#logout-btn').addEventListener('click', async () => {
 
 // ---------- Data ----------
 let USERS = [];
+let GROUPS = [];
 async function loadUsers() {
   USERS = await api('/users');
   renderUsers();
+}
+async function loadGroups() {
+  GROUPS = await api('/groups');
 }
 async function loadAgentStatus() {
   const el = $('#agent-status');
@@ -80,7 +84,11 @@ async function loadAgentStatus() {
     }
   } catch { /* not logged in yet */ }
 }
-function refreshAll() { loadUsers().catch((e) => toast(e.message, 'err')); loadAgentStatus(); }
+function refreshAll() {
+  loadUsers().catch((e) => toast(e.message, 'err'));
+  loadGroups().catch(() => {});
+  loadAgentStatus();
+}
 
 // ---------- Render users ----------
 function renderUsers() {
@@ -101,7 +109,7 @@ function renderUsers() {
       <td><span class="badge ${u.status}">${u.status}</span></td>
       <td>${fmtDate(u.created_at)}</td>
       <td>${expiryTxt}</td>
-      <td>${u.acl.length} rule${u.acl.length !== 1 ? 's' : ''}</td>
+      <td>${u.acl.length} rule${u.acl.length !== 1 ? 's' : ''}${(u.groups && u.groups.length) ? ` <span class="muted">+${u.groups.length} grp</span>` : ''}</td>
       <td class="actions"></td>`;
     const actions = tr.querySelector('.actions');
 
@@ -223,39 +231,70 @@ async function deleteUser(u) {
   } catch (err) { toast(err.message, 'err'); }
 }
 
-// ---------- ACL ----------
-function openAclModal(u) {
-  const render = (rules) => `
-    <h2>ACL: ${esc(u.name)} <span class="muted" style="font-weight:400">(${u.static_ip})</span></h2>
-    <p class="muted">Aturan diterapkan otomatis ke iptables di Proxmox host.</p>
-    <div class="acl-list" id="acl-list">
-      ${rules.length === 0 ? '<div class="muted">Belum ada rule. Default policy VPN berlaku.</div>' : ''}
-      ${rules.map((r) => `
-        <div class="acl-row">
-          <span class="act-${r.action}">${r.action.toUpperCase()}</span>
-          <span>→ <code>${esc(r.dst)}</code></span>
-          <span class="muted">${r.proto}${r.port ? ':' + r.port : ''}</span>
-          <span class="spacer" style="flex:1"></span>
-          <button class="small danger" data-rule="${r.id}">✕</button>
-        </div>`).join('')}
-    </div>
-    <div class="acl-add">
-      <div><label>Aksi</label><select id="acl-action"><option value="allow">allow</option><option value="deny">deny</option></select></div>
-      <div style="flex:1.4"><label>Tujuan (IP/CIDR)</label><input id="acl-dst" placeholder="10.10.10.0/24" /></div>
-      <div><label>Proto</label><select id="acl-proto"><option>all</option><option>tcp</option><option>udp</option><option>icmp</option></select></div>
-      <div><label>Port</label><input id="acl-port" placeholder="mis. 443 / 80:90" style="width:90px" /></div>
-      <button class="primary" id="acl-add-btn">Tambah</button>
-    </div>
-    <div class="modal-actions"><button class="ghost" id="acl-close">Tutup</button></div>`;
+// ---------- ACL (per-user: manual rules + groups) ----------
+async function refetchUser(u) {
+  const fresh = await api(`/users/${u.id}`);
+  Object.assign(u, fresh);
+}
 
-  const draw = (rules) => {
-    openModal(render(rules));
+function ruleRowHtml(r, removable) {
+  return `<div class="acl-row">
+    <span class="act-${r.action}">${r.action.toUpperCase()}</span>
+    <span>→ <code>${esc(r.dst)}</code></span>
+    <span class="muted">${r.proto}${r.port ? ':' + r.port : ''}</span>
+    <span style="flex:1"></span>
+    ${removable ? `<button class="small danger" data-rule="${r.id}">✕</button>` : ''}
+  </div>`;
+}
+
+function openAclModal(u) {
+  const draw = () => {
+    const assigned = u.groups || [];
+    const assignedIds = new Set(assigned.map((g) => g.id));
+    const available = GROUPS.filter((g) => !assignedIds.has(g.id));
+
+    openModal(`
+      <h2>ACL: ${esc(u.name)} <span class="muted" style="font-weight:400">(${u.static_ip})</span></h2>
+      <p class="muted">Aturan (manual + group) diterapkan otomatis ke iptables di Proxmox host.</p>
+
+      <h3 style="margin:14px 0 6px;font-size:14px">Group terpasang</h3>
+      <div id="grp-chips" class="chips">
+        ${assigned.length === 0 ? '<span class="muted">Belum ada group.</span>' : ''}
+        ${assigned.map((g) => `<span class="chip">${esc(g.name)}<button class="chip-x" data-grp="${g.id}">✕</button></span>`).join('')}
+      </div>
+      <div class="acl-add" style="margin-top:10px">
+        <div style="flex:1"><label>Pilih group</label>
+          <select id="grp-select">
+            <option value="">— pilih group —</option>
+            ${available.map((g) => `<option value="${g.id}">${esc(g.name)} (${g.rules.length} rule)</option>`).join('')}
+          </select>
+        </div>
+        <button class="primary" id="grp-apply">Terapkan</button>
+      </div>
+
+      <h3 style="margin:20px 0 6px;font-size:14px">Rule manual</h3>
+      <div class="acl-list" id="acl-list">
+        ${(u.acl || []).length === 0 ? '<div class="muted">Belum ada rule manual.</div>' : ''}
+        ${(u.acl || []).map((r) => ruleRowHtml(r, true)).join('')}
+      </div>
+      <div class="acl-add">
+        <div><label>Aksi</label><select id="acl-action"><option value="allow">allow</option><option value="deny">deny</option></select></div>
+        <div style="flex:1.4"><label>Tujuan (IP/CIDR)</label><input id="acl-dst" placeholder="10.10.10.0/24" /></div>
+        <div><label>Proto</label><select id="acl-proto"><option>all</option><option>tcp</option><option>udp</option><option>icmp</option></select></div>
+        <div><label>Port</label><input id="acl-port" placeholder="443 / 80:90" style="width:90px" /></div>
+        <button class="primary" id="acl-add-btn">Tambah</button>
+      </div>
+      <div class="modal-actions"><button class="ghost" id="acl-close">Tutup</button></div>`);
+
     $('#acl-close').addEventListener('click', () => { closeModal(); loadUsers(); });
     $('#acl-add-btn').addEventListener('click', () => addRule(u, draw));
+    $('#grp-apply').addEventListener('click', () => applyGroup(u, draw));
     $('#acl-list').querySelectorAll('[data-rule]').forEach((b) =>
       b.addEventListener('click', () => delRule(u, b.dataset.rule, draw)));
+    $('#grp-chips').querySelectorAll('[data-grp]').forEach((b) =>
+      b.addEventListener('click', () => removeGroup(u, b.dataset.grp, draw)));
   };
-  draw(u.acl);
+  draw();
 }
 
 async function addRule(u, draw) {
@@ -268,8 +307,8 @@ async function addRule(u, draw) {
   try {
     const r = await api(`/users/${u.id}/acl`, { method: 'POST', body: JSON.stringify(body) });
     u.acl = r.acl;
-    toast('Rule ditambahkan & diterapkan');
-    draw(u.acl);
+    toast('Rule manual ditambahkan & diterapkan');
+    draw();
   } catch (err) { toast(err.message, 'err'); }
 }
 async function delRule(u, ruleId, draw) {
@@ -277,7 +316,124 @@ async function delRule(u, ruleId, draw) {
     await api(`/users/${u.id}/acl/${ruleId}`, { method: 'DELETE' });
     u.acl = u.acl.filter((r) => String(r.id) !== String(ruleId));
     toast('Rule dihapus');
-    draw(u.acl);
+    draw();
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function applyGroup(u, draw) {
+  const groupId = $('#grp-select').value;
+  if (!groupId) return;
+  try {
+    await api(`/users/${u.id}/groups`, { method: 'POST', body: JSON.stringify({ groupId: parseInt(groupId, 10) }) });
+    await refetchUser(u);
+    toast('Group diterapkan ke user');
+    draw();
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function removeGroup(u, groupId, draw) {
+  try {
+    await api(`/users/${u.id}/groups/${groupId}`, { method: 'DELETE' });
+    await refetchUser(u);
+    toast('Group dilepas dari user');
+    draw();
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+// ---------- Group manager ----------
+function openGroupsModal() {
+  const draw = () => {
+    openModal(`
+      <h2>Kelola ACL Group</h2>
+      <p class="muted">Group = kumpulan rule yang bisa dipakai ulang. Edit rule group → semua user yang pakai otomatis ke-update.</p>
+      <div class="acl-add" style="margin:10px 0 16px">
+        <div style="flex:1"><label>Nama group baru</label><input id="ng-name" placeholder="mis. Web Only" /></div>
+        <div style="flex:1.4"><label>Deskripsi (opsional)</label><input id="ng-desc" placeholder="mis. HTTP/HTTPS saja" /></div>
+        <button class="primary" id="ng-create">Buat Group</button>
+      </div>
+      <div id="groups-list">
+        ${GROUPS.length === 0 ? '<div class="muted">Belum ada group.</div>' : ''}
+        ${GROUPS.map((g) => `
+          <div class="card" style="margin-bottom:12px;padding:14px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <strong>${esc(g.name)}</strong>
+              <span class="muted" style="font-size:12px">${esc(g.description || '')}</span>
+              <span style="flex:1"></span>
+              <span class="muted" style="font-size:12px">${g.members} user</span>
+              <button class="small danger" data-delgrp="${g.id}">Hapus group</button>
+            </div>
+            <div class="acl-list" style="margin-top:8px">
+              ${g.rules.length === 0 ? '<div class="muted">Belum ada rule.</div>' : ''}
+              ${g.rules.map((r) => `<div class="acl-row">
+                <span class="act-${r.action}">${r.action.toUpperCase()}</span>
+                <span>→ <code>${esc(r.dst)}</code></span>
+                <span class="muted">${r.proto}${r.port ? ':' + r.port : ''}</span>
+                <span style="flex:1"></span>
+                <button class="small danger" data-grp="${g.id}" data-rule="${r.id}">✕</button>
+              </div>`).join('')}
+            </div>
+            <div class="acl-add" style="margin-top:8px">
+              <div><label>Aksi</label><select data-f="action" data-g="${g.id}"><option value="allow">allow</option><option value="deny">deny</option></select></div>
+              <div style="flex:1.4"><label>Tujuan (IP/CIDR)</label><input data-f="dst" data-g="${g.id}" placeholder="10.10.10.0/24" /></div>
+              <div><label>Proto</label><select data-f="proto" data-g="${g.id}"><option>all</option><option>tcp</option><option>udp</option><option>icmp</option></select></div>
+              <div><label>Port</label><input data-f="port" data-g="${g.id}" placeholder="443" style="width:80px" /></div>
+              <button class="primary small" data-addrule="${g.id}">+ Rule</button>
+            </div>
+          </div>`).join('')}
+      </div>
+      <div class="modal-actions"><button class="ghost" id="grp-mgr-close">Tutup</button></div>`);
+
+    $('#grp-mgr-close').addEventListener('click', () => { closeModal(); loadUsers(); });
+    $('#ng-create').addEventListener('click', () => createGroup(draw));
+    $('#groups-list').querySelectorAll('[data-delgrp]').forEach((b) =>
+      b.addEventListener('click', () => deleteGroup(b.dataset.delgrp, draw)));
+    $('#groups-list').querySelectorAll('[data-addrule]').forEach((b) =>
+      b.addEventListener('click', () => addGroupRule(b.dataset.addrule, draw)));
+    $('#groups-list').querySelectorAll('[data-grp][data-rule]').forEach((b) =>
+      b.addEventListener('click', () => delGroupRule(b.dataset.grp, b.dataset.rule, draw)));
+  };
+  draw();
+}
+
+async function createGroup(draw) {
+  const name = $('#ng-name').value.trim();
+  const description = $('#ng-desc').value.trim();
+  try {
+    await api('/groups', { method: 'POST', body: JSON.stringify({ name, description }) });
+    await loadGroups();
+    toast('Group dibuat');
+    draw();
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function deleteGroup(id, draw) {
+  if (!confirm('Hapus group ini? Rule-nya dilepas dari semua user yang memakainya.')) return;
+  try {
+    await api(`/groups/${id}`, { method: 'DELETE' });
+    await loadGroups();
+    toast('Group dihapus');
+    draw();
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function addGroupRule(gid, draw) {
+  const q = (f) => document.querySelector(`[data-f="${f}"][data-g="${gid}"]`);
+  const body = {
+    action: q('action').value,
+    dst: q('dst').value.trim(),
+    proto: q('proto').value,
+    port: q('port').value.trim() || null,
+  };
+  try {
+    const r = await api(`/groups/${gid}/rules`, { method: 'POST', body: JSON.stringify(body) });
+    if (r.warning) toast('Rule ditambah, tapi sebagian user gagal update: ' + r.warning.join('; '), 'err');
+    else toast('Rule group ditambahkan (semua user ke-update)');
+    await loadGroups();
+    draw();
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function delGroupRule(gid, ruleId, draw) {
+  try {
+    await api(`/groups/${gid}/rules/${ruleId}`, { method: 'DELETE' });
+    toast('Rule group dihapus (semua user ke-update)');
+    await loadGroups();
+    draw();
   } catch (err) { toast(err.message, 'err'); }
 }
 
@@ -305,6 +461,10 @@ $('#audit-btn').addEventListener('click', async () => {
         <td class="muted">${esc(r.detail || '')}</td></tr>`).join('')}</tbody></table></div>
       <div class="modal-actions"><button class="ghost" onclick="document.getElementById('modal-backdrop').classList.add('hidden')">Tutup</button></div>`);
   } catch (err) { toast(err.message, 'err'); }
+});
+
+$('#groups-btn').addEventListener('click', () => {
+  loadGroups().then(openGroupsModal).catch((e) => toast(e.message, 'err'));
 });
 
 $('#refresh-btn').addEventListener('click', refreshAll);
