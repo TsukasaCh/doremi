@@ -26,7 +26,14 @@ get_file() {
   else
     echo "   downloading $rel"
     local tmp; tmp="$(mktemp)"
-    curl -fsSL "$RAW/$rel" -o "$tmp"
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL "$RAW/$rel" -o "$tmp"
+    elif command -v wget >/dev/null 2>&1; then
+      wget -qO "$tmp" "$RAW/$rel"
+    else
+      echo "ERROR: need curl or wget to download $rel" >&2
+      rm -f "$tmp"; exit 1
+    fi
     install -m "$mode" "$tmp" "$dst"
     rm -f "$tmp"
   fi
