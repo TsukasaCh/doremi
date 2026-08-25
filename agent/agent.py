@@ -388,15 +388,16 @@ def iptables_remove_acl(params):
 
 
 def iptables_list(_params):
-    parent = CONF["parent_chain"]
-    raw = _ipt("-nL", parent, "-v", "--line-numbers", check=False)
-    # also dump every per-user chain
-    dump = raw
-    for line in raw.splitlines():
-        m = re.search(r"(VACL_\d+_\d+_\d+_\d+)", line)
-        if m:
-            dump += "\n" + _ipt("-nL", m.group(1), "-v", check=False)
-    return {"raw": dump or "(parent chain empty)"}
+    """Return the full existing ruleset on the host: the whole filter table
+    (all chains, incl. the dashboard's VPN_ACL + per-user chains) and the nat
+    table (so port-forward / DNAT / MASQUERADE rules are visible too)."""
+    fil = _ipt("-L", "-n", "-v", "--line-numbers", check=False)
+    nat = _ipt("-t", "nat", "-L", "-n", "-v", "--line-numbers", check=False)
+    raw = (
+        "########## FILTER TABLE ##########\n" + (fil or "(empty)") +
+        "\n\n########## NAT TABLE ##########\n" + (nat or "(empty)")
+    )
+    return {"raw": raw}
 
 
 def _persist():
