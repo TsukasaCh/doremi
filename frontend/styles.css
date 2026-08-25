@@ -67,6 +67,9 @@ button.ghost { background: transparent; }
 button.danger { color: var(--red); border-color: #52323a; }
 button.danger:hover { background: #2a1a1e; }
 button.small { padding: 5px 10px; font-size: 12px; }
+button.icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 5px 8px; color: var(--primary); }
+button.icon-btn:hover { border-color: var(--primary); background: var(--panel-2); }
+td.actions { display: flex; gap: 6px; align-items: center; }
 
 /* App shell: sidebar + content */
 .app { display: flex; min-height: 100vh; }

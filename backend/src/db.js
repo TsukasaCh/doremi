@@ -67,6 +67,16 @@ CREATE TABLE IF NOT EXISTS user_acl_groups (
 );
 `);
 
+// --- migrations (idempotent) ---
+// Store the generated .ovpn so the admin can re-download it later. The file
+// contains the client private key, so the DB now holds secrets — protect the
+// DB file / VM accordingly (it's already an admin-only tool).
+try {
+  db.exec('ALTER TABLE users ADD COLUMN ovpn TEXT');
+} catch {
+  /* column already exists */
+}
+
 export function audit(actor, action, target, detail, ok = true) {
   db.prepare(
     'INSERT INTO audit_log (actor, action, target, detail, ok) VALUES (?, ?, ?, ?, ?)'

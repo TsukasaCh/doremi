@@ -19,7 +19,10 @@ function serializeUser(u) {
         WHERE uag.user_id = ? ORDER BY g.name`
     )
     .all(u.id);
-  return { ...u, acl: rules, groups };
+  // Never send the raw .ovpn (contains the private key) in list/detail payloads;
+  // expose only whether one is stored. It's fetched on demand via /:id/ovpn.
+  const { ovpn, ...rest } = u;
+  return { ...rest, acl: rules, groups, has_ovpn: !!ovpn };
 }
 
 // GET /api/users  — list all users with their ACL
@@ -64,9 +67,9 @@ router.post('/', async (req, res) => {
 
   const info = db
     .prepare(
-      'INSERT INTO users (name, static_ip, expires_at, note) VALUES (?, ?, ?, ?)'
+      'INSERT INTO users (name, static_ip, expires_at, note, ovpn) VALUES (?, ?, ?, ?, ?)'
     )
-    .run(name, staticIp, expiresAt, note || null);
+    .run(name, staticIp, expiresAt, note || null, ovpn || null);
 
   audit(req.user, 'create_user', name, `ip=${staticIp} expires=${expiresAt || 'never'}`);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
@@ -74,8 +77,18 @@ router.post('/', async (req, res) => {
   res.status(201).json({ user: serializeUser(user), ovpn });
 });
 
-// GET /api/users/:id/config  — re-fetch nothing sensitive; config is only handed at create.
-// (Certs cannot be re-exported without private key; this endpoint returns metadata only.)
+// GET /api/users/:id/ovpn  — re-download the stored .ovpn config
+router.get('/:id/ovpn', (req, res) => {
+  const u = db.prepare('SELECT name, ovpn FROM users WHERE id = ?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: 'Not found' });
+  if (!u.ovpn) {
+    return res.status(404).json({
+      error: 'Config tidak tersimpan untuk user ini (dibuat sebelum fitur ini). Buat ulang user untuk config yang bisa diunduh.',
+    });
+  }
+  res.json({ name: u.name, ovpn: u.ovpn });
+});
+
 router.get('/:id', (req, res) => {
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!u) return res.status(404).json({ error: 'Not found' });

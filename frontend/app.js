@@ -159,8 +159,12 @@ function renderUsers() {
 
     const aclBtn = mkBtn('ACL', 'small', () => openAclModal(u));
     const renewBtn = mkBtn('Perpanjang', 'small ghost', () => openRenewModal(u));
+    actions.append(aclBtn, renewBtn);
+    if (u.has_ovpn) {
+      actions.append(mkIconBtn(DOWNLOAD_SVG, 'small icon-btn', 'Unduh .ovpn', () => downloadUserOvpn(u)));
+    }
     const delBtn = mkBtn('Hapus', 'small danger', () => deleteUser(u));
-    actions.append(aclBtn, renewBtn, delBtn);
+    actions.append(delBtn);
     body.appendChild(tr);
   }
 }
@@ -170,6 +174,32 @@ function mkBtn(text, cls, onclick) {
   b.textContent = text;
   b.addEventListener('click', onclick);
   return b;
+}
+function mkIconBtn(svg, cls, title, onclick) {
+  const b = document.createElement('button');
+  b.className = cls;
+  b.title = title;
+  b.setAttribute('aria-label', title);
+  b.innerHTML = svg;
+  b.addEventListener('click', onclick);
+  return b;
+}
+const DOWNLOAD_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+
+function downloadOvpn(name, ovpn) {
+  const blob = new Blob([ovpn], { type: 'application/x-openvpn-profile' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name}.ovpn`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+async function downloadUserOvpn(u) {
+  try {
+    const r = await api(`/users/${u.id}/ovpn`);
+    downloadOvpn(r.name, r.ovpn);
+    toast(`Config ${r.name}.ovpn diunduh`);
+  } catch (err) { toast(err.message, 'err'); }
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
@@ -222,21 +252,14 @@ async function createUser() {
 function showOvpnModal(name, ovpn) {
   openModal(`
     <h2>Config untuk ${esc(name)}</h2>
-    <p class="muted">File .ovpn ini hanya ditampilkan sekali. Unduh dan serahkan ke user.</p>
+    <p class="muted">Config juga tersimpan di dashboard — bisa diunduh ulang kapan saja lewat tombol unduh di baris user.</p>
     <pre class="ovpn">${esc(ovpn)}</pre>
     <div class="modal-actions">
       <button class="ghost" id="ov-close">Tutup</button>
       <button class="primary" id="ov-dl">⬇ Unduh ${esc(name)}.ovpn</button>
     </div>`);
   $('#ov-close').addEventListener('click', closeModal);
-  $('#ov-dl').addEventListener('click', () => {
-    const blob = new Blob([ovpn], { type: 'application/x-openvpn-profile' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${name}.ovpn`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  });
+  $('#ov-dl').addEventListener('click', () => downloadOvpn(name, ovpn));
 }
 
 // ---------- Renew ----------
