@@ -30,19 +30,24 @@ else
 fi
 cd "$DIR"
 
-# 3) Environment file
+# 3) Environment file — on first run we stop so you can edit it.
+#    (No interactive editor here: this script is often run via `curl | bash`,
+#    where stdin is the pipe, so a prompt/nano cannot read the keyboard.)
 if [ ! -f backend/.env ]; then
   cp backend/.env.example backend/.env
   echo
-  echo "!!  Created backend/.env from the example."
-  echo "!!  EDIT IT NOW before the service is reachable:"
+  echo "!!  Created backend/.env from the example. EDIT IT before starting:"
   echo "      - ADMIN_PASSWORD, SESSION_SECRET"
   echo "      - OPENVPN_AGENT_URL/TOKEN  (http://10.10.10.101:9000)"
   echo "      - PROXMOX_AGENT_URL/TOKEN  (http://10.10.10.1:9000)"
   echo "      - keep PORT=8080"
   echo
-  read -rp "Press Enter to open backend/.env in nano (Ctrl-X to save)... " _
-  ${EDITOR:-nano} backend/.env
+  echo "    Next:"
+  echo "      nano $DIR/backend/.env"
+  echo "      cd $DIR && $DC up -d --build"
+  echo
+  echo "==> Stopping here so you can edit the config first."
+  exit 0
 fi
 
 # 4) Build & run
