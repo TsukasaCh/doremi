@@ -36,7 +36,14 @@ CONF = {
     "role": env("ROLE", "both"),
     "hostname": env("AGENT_HOSTNAME", os.uname().nodename if hasattr(os, "uname") else "host"),
 
-    # --- OpenVPN / easy-rsa ---
+    # --- OpenVPN ---
+    # How the agent creates/revokes clients:
+    #   script  -> drive an existing openvpn-install.sh (recommended if you used one)
+    #   easyrsa -> call easy-rsa directly
+    "openvpn_backend": env("OPENVPN_BACKEND", "easyrsa"),
+    "openvpn_install_sh": env("OPENVPN_INSTALL_SH", "/root/openvpn-install.sh"),
+
+    # --- easy-rsa (used only when OPENVPN_BACKEND=easyrsa) ---
     "easyrsa_dir": env("EASYRSA_DIR", "/etc/openvpn/easy-rsa"),
     # PKI location; defaults to <EASYRSA_DIR>/pki but can be pointed elsewhere
     "easyrsa_pki": env("EASYRSA_PKI") or
@@ -114,7 +121,70 @@ def ovpn_easyrsa(*args, days=None):
                           "EASYRSA_BATCH": "1"})
 
 
+# ---- backend dispatchers -------------------------------------------------
+def _install_sh():
+    p = CONF["openvpn_install_sh"]
+    if not os.path.exists(p):
+        raise RpcError(f"openvpn-install.sh not found at {p}. "
+                       f"Set OPENVPN_INSTALL_SH in /etc/openvpn-agent.env.")
+    return p
+
+
 def openvpn_create_user(params):
+    if CONF["openvpn_backend"] == "script":
+        return _create_user_script(params)
+    return _create_user_easyrsa(params)
+
+
+def openvpn_revoke_user(params):
+    if CONF["openvpn_backend"] == "script":
+        return _revoke_user_script(params)
+    return _revoke_user_easyrsa(params)
+
+
+def openvpn_list_certs(params):
+    if CONF["openvpn_backend"] == "script":
+        return _list_certs_script(params)
+    return _list_certs_easyrsa(params)
+
+
+# ---- backend: openvpn-install.sh ----------------------------------------
+def _create_user_script(params):
+    name = params.get("name", "")
+    if not NAME_RE.match(name):
+        raise RpcError("invalid name")
+    days = params.get("expiry_days")
+
+    out = os.path.join("/tmp", f"{name}.ovpn")
+    cmd = [_install_sh(), "client", "add", name, "--output", out]
+    if days:
+        cmd += ["--cert-days", str(int(days))]
+    run(cmd)  # no --password -> nopass client, as the dashboard expects
+    if not os.path.exists(out):
+        raise RpcError("client added but .ovpn not found at expected path")
+    ovpn = read_file(out)
+    try:
+        os.remove(out)
+    except OSError:
+        pass
+    return {"ovpn": ovpn}
+
+
+def _revoke_user_script(params):
+    name = params.get("name", "")
+    if not NAME_RE.match(name):
+        raise RpcError("invalid name")
+    run([_install_sh(), "client", "revoke", name])
+    return {"revoked": name}
+
+
+def _list_certs_script(_params):
+    out = run([_install_sh(), "client", "list"], check=False)
+    return {"raw": out}
+
+
+# ---- backend: easy-rsa ---------------------------------------------------
+def _create_user_easyrsa(params):
     name = params.get("name", "")
     if not NAME_RE.match(name):
         raise RpcError("invalid name")
@@ -170,7 +240,7 @@ verb 3
     return {"ovpn": ovpn}
 
 
-def openvpn_revoke_user(params):
+def _revoke_user_easyrsa(params):
     name = params.get("name", "")
     if not NAME_RE.match(name):
         raise RpcError("invalid name")
@@ -214,7 +284,7 @@ def openvpn_remove_ccd(params):
     return {"removed": name}
 
 
-def openvpn_list_certs(_params):
+def _list_certs_easyrsa(_params):
     idx = os.path.join(CONF["easyrsa_pki"], "index.txt")
     out = []
     if os.path.exists(idx):
