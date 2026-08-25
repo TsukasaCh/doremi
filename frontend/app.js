@@ -1,5 +1,12 @@
 'use strict';
 
+// ===================================================================
+// Decoy unlock code — CHANGE THIS. Do NOT reuse your VPN/admin password.
+// This is client-side obscurity only (hides the real login behind a
+// neutral page); the actual security is the admin password on the real form.
+const UNLOCK_CODE = 'ubah-kode-rahasia-ini';
+// ===================================================================
+
 const $ = (s) => document.querySelector(s);
 const api = async (path, opts = {}) => {
   const res = await fetch('/api' + path, {
@@ -47,13 +54,41 @@ async function checkAuth() {
     showLogin();
   }
 }
-function showLogin() { $('#login-view').classList.remove('hidden'); $('#app-view').classList.add('hidden'); }
+function showLogin() {
+  // Show the decoy first; the real login form stays hidden until unlocked.
+  $('#decoy-view').classList.remove('hidden');
+  $('#login-view').classList.add('hidden');
+  $('#app-view').classList.add('hidden');
+  const inp = $('#decoy-input');
+  if (inp) { inp.value = ''; inp.focus(); }
+}
+function revealRealLogin() {
+  $('#decoy-view').classList.add('hidden');
+  $('#login-view').classList.remove('hidden');
+  $('#login-user').focus();
+}
 function showApp() {
+  $('#decoy-view').classList.add('hidden');
   $('#login-view').classList.add('hidden');
   $('#app-view').classList.remove('hidden');
   showView('users');
   refreshAll();
 }
+
+// Decoy: reveal the real login only when the exact unlock code is entered.
+$('#decoy-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const val = $('#decoy-input').value;
+  if (val === UNLOCK_CODE) {
+    $('#decoy-error').textContent = '';
+    revealRealLogin();
+  } else {
+    // Behave like an ordinary failed sign-in, revealing nothing.
+    $('#decoy-error').textContent = 'Kami tidak menemukan akun dengan detail tersebut.';
+    $('#decoy-input').value = '';
+    $('#decoy-input').focus();
+  }
+});
 
 $('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();

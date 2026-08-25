@@ -7,6 +7,24 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- Decoy view: neutral sign-in shown first; the real login is revealed
+       only after the secret unlock code is entered (obscurity, not security). -->
+  <div id="decoy-view" class="decoy-wrap hidden">
+    <form id="decoy-form" class="decoy-card">
+      <div class="decoy-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <h1>Masuk</h1>
+      <p class="decoy-sub">Masukkan email untuk melanjutkan.</p>
+      <label class="decoy-field">
+        <span>Email atau nomor telepon</span>
+        <input id="decoy-input" type="text" autocomplete="username" autofocus />
+      </label>
+      <button type="submit">Berikutnya</button>
+      <div id="decoy-error" class="decoy-error"></div>
+    </form>
+  </div>
+
   <!-- Login view -->
   <div id="login-view" class="login-wrap hidden">
     <form id="login-form" class="card login-card">

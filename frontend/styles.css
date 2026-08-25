@@ -32,6 +32,36 @@ body {
 }
 .card.nested { background: var(--panel-2); }
 
+/* Decoy sign-in (neutral, no real brand) */
+.decoy-wrap {
+  display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px;
+  background: linear-gradient(135deg, #eef2f7 0%, #f7f5fb 50%, #eaf0f6 100%);
+}
+.decoy-card {
+  width: 360px; max-width: 100%;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+  padding: 40px 44px; box-shadow: 0 2px 14px rgba(0,0,0,.08);
+  color: #1b1b1b; font-family: "Segoe UI", system-ui, sans-serif;
+}
+.decoy-logo { color: #5b6470; margin-bottom: 18px; }
+.decoy-logo svg { width: 30px; height: 30px; }
+.decoy-card h1 { margin: 0 0 6px; font-size: 24px; font-weight: 600; color: #1b1b1b; }
+.decoy-sub { margin: 0 0 20px; font-size: 15px; color: #4b5563; }
+.decoy-field { display: block; }
+.decoy-field span { display: block; font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+.decoy-card input {
+  width: 100%; padding: 8px 4px; font-size: 15px; color: #111;
+  background: transparent; border: none; border-bottom: 1px solid #666; border-radius: 0;
+}
+.decoy-card input:focus { outline: none; border-bottom: 2px solid #0067b8; }
+.decoy-card button {
+  margin-top: 26px; width: auto; min-width: 108px; float: right;
+  background: #0067b8; color: #fff; border: none; border-radius: 2px;
+  padding: 8px 20px; font-size: 15px; font-weight: 400; cursor: pointer;
+}
+.decoy-card button:hover { background: #005da6; }
+.decoy-error { clear: both; padding-top: 18px; color: #a80000; font-size: 13px; min-height: 16px; }
+
 /* Login */
 .login-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
 .login-card { width: 340px; }
