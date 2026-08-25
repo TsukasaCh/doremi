@@ -1,11 +1,7 @@
 'use strict';
 
-// ===================================================================
-// Decoy unlock code — CHANGE THIS. Do NOT reuse your VPN/admin password.
-// This is client-side obscurity only (hides the real login behind a
-// neutral page); the actual security is the admin password on the real form.
-const UNLOCK_CODE = 'ubah-kode-rahasia-ini';
-// ===================================================================
+// The decoy unlock code is verified SERVER-SIDE (backend UNLOCK_CODE env).
+// It is never sent to the browser, so it isn't visible in DevTools/source.
 
 const $ = (s) => document.querySelector(s);
 const api = async (path, opts = {}) => {
@@ -54,13 +50,19 @@ async function checkAuth() {
     showLogin();
   }
 }
-function showLogin() {
-  // Show the decoy first; the real login form stays hidden until unlocked.
-  $('#decoy-view').classList.remove('hidden');
-  $('#login-view').classList.add('hidden');
+async function showLogin() {
   $('#app-view').classList.add('hidden');
-  const inp = $('#decoy-input');
-  if (inp) { inp.value = ''; inp.focus(); }
+  // Ask the server whether the decoy is enabled (no secret revealed).
+  let decoy = true;
+  try { decoy = !!(await api('/auth/config')).decoy; } catch { decoy = true; }
+  if (decoy) {
+    $('#decoy-view').classList.remove('hidden');
+    $('#login-view').classList.add('hidden');
+    const inp = $('#decoy-input');
+    if (inp) { inp.value = ''; inp.focus(); }
+  } else {
+    revealRealLogin();
+  }
 }
 function revealRealLogin() {
   $('#decoy-view').classList.add('hidden');
@@ -75,14 +77,15 @@ function showApp() {
   refreshAll();
 }
 
-// Decoy: reveal the real login only when the exact unlock code is entered.
-$('#decoy-form').addEventListener('submit', (e) => {
+// Decoy: reveal the real login only when the server confirms the unlock code.
+$('#decoy-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const val = $('#decoy-input').value;
-  if (val === UNLOCK_CODE) {
+  const code = $('#decoy-input').value;
+  try {
+    await api('/auth/unlock', { method: 'POST', body: JSON.stringify({ code }) });
     $('#decoy-error').textContent = '';
     revealRealLogin();
-  } else {
+  } catch {
     // Behave like an ordinary failed sign-in, revealing nothing.
     $('#decoy-error').textContent = 'Kami tidak menemukan akun dengan detail tersebut.';
     $('#decoy-input').value = '';

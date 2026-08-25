@@ -1,8 +1,28 @@
+import crypto from 'crypto';
 import { Router } from 'express';
 import { checkLogin, issueCookie, clearCookie, requireAuth } from '../auth.js';
 import { audit } from '../db.js';
+import cfg from '../config.js';
 
 const router = Router();
+
+// Public: does the UI show the decoy sign-in? (no secret leaked)
+router.get('/config', (req, res) => {
+  res.json({ decoy: !!cfg.unlockCode });
+});
+
+// Public: check the decoy unlock code server-side. Reveals nothing on failure.
+router.post('/unlock', (req, res) => {
+  const code = req.body?.code;
+  const expected = cfg.unlockCode;
+  const ok =
+    expected &&
+    typeof code === 'string' &&
+    code.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(code), Buffer.from(expected));
+  if (!ok) return res.status(401).json({ error: 'invalid' });
+  res.json({ ok: true });
+});
 
 router.post('/login', (req, res) => {
   const { user, password } = req.body || {};

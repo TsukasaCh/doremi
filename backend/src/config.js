@@ -6,6 +6,10 @@ const cfg = {
   adminUser: process.env.ADMIN_USER || 'admin',
   adminPassword: process.env.ADMIN_PASSWORD || 'changeme',
   sessionSecret: process.env.SESSION_SECRET || 'dev-secret-change-me',
+  // Optional decoy unlock code. If set, the UI shows a neutral decoy sign-in
+  // and only reveals the real login when this exact code is submitted. Checked
+  // server-side, so it never ships to the browser. Empty = decoy disabled.
+  unlockCode: process.env.UNLOCK_CODE || '',
 
   agents: {
     openvpn: {
