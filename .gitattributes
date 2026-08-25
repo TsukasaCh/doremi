@@ -1,0 +1,4 @@
+# Force LF for all text files so scripts run correctly on the Linux VM
+* text=auto eol=lf
+*.png binary
+*.jpg binary
