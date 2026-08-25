@@ -105,7 +105,8 @@ td.actions { display: flex; gap: 6px; align-items: center; }
 
 .sidebar-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); }
 .agents { display: flex; flex-direction: column; gap: 6px; font-size: 12px; margin-bottom: 12px; }
-.agent-pill { display: flex; align-items: center; gap: 7px; padding: 5px 10px; background: var(--panel-2); border-radius: 8px; }
+.agent-pill { display: flex; align-items: center; gap: 7px; padding: 6px 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 12px; cursor: pointer; width: 100%; text-align: left; font-weight: 500; }
+.agent-pill:hover { border-color: var(--primary); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
 .dot.on { background: var(--green); }
 .dot.off { background: var(--red); }
@@ -156,6 +157,14 @@ pre.ovpn { background: #0a0e13; border: 1px solid var(--border); border-radius: 
 .chip-x { padding: 0 6px; font-size: 12px; line-height: 1.4; border-radius: 999px; border: none; background: transparent; color: var(--red); }
 .chip-x:hover { background: #2a1a1e; }
 .modal h3 { color: var(--text); }
+
+/* key-value list (agent detail modal) */
+.kv-list { display: flex; flex-direction: column; gap: 2px; }
+.kv { display: flex; gap: 12px; padding: 8px 2px; border-bottom: 1px solid var(--border); }
+.kv:last-child { border-bottom: none; }
+.kv-k { flex: 0 0 120px; color: var(--muted); font-size: 13px; }
+.kv-v { flex: 1; min-width: 0; word-break: break-word; }
+.kv-v code { margin-right: 4px; }
 
 /* iptables structured view */
 .ipt-table-card { margin-bottom: 18px; }

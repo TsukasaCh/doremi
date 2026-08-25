@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import db from '../db.js';
+import cfg from '../config.js';
 import { openvpnAgent, proxmoxAgent } from '../agentClient.js';
 
 const router = Router();
@@ -8,11 +9,12 @@ const router = Router();
 router.get('/status', async (req, res) => {
   const out = {};
   for (const [key, agent] of [['openvpn', openvpnAgent], ['proxmox', proxmoxAgent]]) {
+    const url = cfg.agents[key].url;
     try {
       const r = await agent.ping();
-      out[key] = { online: true, ...r };
+      out[key] = { online: true, url, ...r };
     } catch (e) {
-      out[key] = { online: false, error: e.message };
+      out[key] = { online: false, url, error: e.message };
     }
   }
   res.json(out);

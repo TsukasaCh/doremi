@@ -16,14 +16,17 @@ Run as root (needs easy-rsa / iptables). Deploy with the systemd unit in deploy/
 
 import json
 import os
+import platform
 import re
 import shlex
 import ssl
 import subprocess
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 VERSION = "1.0.0"
+STARTED_AT = time.time()
 
 # ---------------------------------------------------------------- config
 def env(key, default=None):
@@ -484,8 +487,15 @@ def enabled_methods():
 
 def dispatch(method, params):
     if method == "ping":
-        return {"host": CONF["hostname"], "role": CONF["role"],
-                "version": VERSION, "methods": sorted(enabled_methods())}
+        return {
+            "host": CONF["hostname"], "role": CONF["role"], "version": VERSION,
+            "methods": sorted(enabled_methods()),
+            "uptime_seconds": int(time.time() - STARTED_AT),
+            "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(STARTED_AT)),
+            "pid": os.getpid(),
+            "python": platform.python_version(),
+            "listen": f"{CONF['listen_host']}:{CONF['listen_port']}",
+        }
     handler = enabled_methods().get(method)
     if not handler:
         raise RpcError(f"unknown or disabled method: {method}")

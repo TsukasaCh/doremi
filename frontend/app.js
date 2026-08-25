@@ -75,19 +75,62 @@ async function loadUsers() {
 async function loadGroups() {
   GROUPS = await api('/groups');
 }
+let AGENT_STATUS = {};
 async function loadAgentStatus() {
   const el = $('#agent-status');
-  el.innerHTML = '';
   try {
-    const s = await api('/agents/status');
-    for (const [name, info] of Object.entries(s)) {
-      const pill = document.createElement('div');
+    AGENT_STATUS = await api('/agents/status');
+    el.innerHTML = '';
+    for (const [name, info] of Object.entries(AGENT_STATUS)) {
+      const pill = document.createElement('button');
       pill.className = 'agent-pill';
-      pill.title = info.online ? (info.host || '') : info.error;
-      pill.innerHTML = `<span class="dot ${info.online ? 'on' : 'off'}"></span>${name}`;
+      pill.title = 'Klik untuk detail';
+      pill.innerHTML = `<span class="dot ${info.online ? 'on' : 'off'}"></span><span>${name}</span>`;
+      pill.addEventListener('click', () => openAgentModal(name));
       el.appendChild(pill);
     }
   } catch { /* not logged in yet */ }
+}
+
+function fmtUptime(sec) {
+  if (sec == null) return '—';
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600),
+    m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return [d && `${d}h`, (d || h) && `${h}j`, `${m}m`, `${s}d`].filter(Boolean).join(' ');
+}
+
+function openAgentModal(name) {
+  const i = AGENT_STATUS[name] || {};
+  const row = (k, v) => v ? `<div class="kv"><span class="kv-k">${k}</span><span class="kv-v">${v}</span></div>` : '';
+  const body = i.online
+    ? `
+      ${row('Status', '<span class="badge active">online</span>')}
+      ${row('Host', `<code>${esc(i.host || '-')}</code>`)}
+      ${row('Role', esc(i.role || '-'))}
+      ${row('Alamat', `<code>${esc(i.url || '-')}</code>`)}
+      ${row('Listen', `<code>${esc(i.listen || '-')}</code>`)}
+      ${row('Versi agent', esc(i.version || '-'))}
+      ${row('Python', esc(i.python || '-'))}
+      ${row('PID', esc(String(i.pid ?? '-')))}
+      ${row('Uptime', fmtUptime(i.uptime_seconds))}
+      ${row('Aktif sejak', i.started_at ? fmtDate(i.started_at) : '-')}
+      ${row('Method', (i.methods || []).map((m) => `<code>${esc(m)}</code>`).join(' ') || '-')}`
+    : `
+      ${row('Status', '<span class="badge revoked">offline</span>')}
+      ${row('Alamat', `<code>${esc(i.url || '-')}</code>`)}
+      ${row('Error', `<span class="error" style="margin:0">${esc(i.error || 'tidak diketahui')}</span>`)}`;
+  openModal(`
+    <h2>Agent: ${esc(name)}</h2>
+    <div class="kv-list">${body}</div>
+    <div class="modal-actions">
+      <button class="ghost" id="ag-refresh">↻ Cek ulang</button>
+      <button class="primary" id="ag-close">Tutup</button>
+    </div>`);
+  $('#ag-close').addEventListener('click', closeModal);
+  $('#ag-refresh').addEventListener('click', async () => {
+    await loadAgentStatus();
+    openAgentModal(name);
+  });
 }
 function refreshAll() {
   loadUsers().catch((e) => toast(e.message, 'err'));
