@@ -38,6 +38,9 @@ CONF = {
 
     # --- OpenVPN / easy-rsa ---
     "easyrsa_dir": env("EASYRSA_DIR", "/etc/openvpn/easy-rsa"),
+    # PKI location; defaults to <EASYRSA_DIR>/pki but can be pointed elsewhere
+    "easyrsa_pki": env("EASYRSA_PKI") or
+    os.path.join(env("EASYRSA_DIR", "/etc/openvpn/easy-rsa"), "pki"),
     "openvpn_dir": env("OPENVPN_DIR", "/etc/openvpn"),
     "ccd_dir": env("CCD_DIR", "/etc/openvpn/ccd"),
     "ta_key": env("TA_KEY", "/etc/openvpn/ta.key"),
@@ -67,11 +70,16 @@ class RpcError(Exception):
 
 
 # ---------------------------------------------------------------- shell
-def run(cmd, check=True, input_text=None):
+def run(cmd, check=True, input_text=None, cwd=None, extra_env=None):
     """Run a command (list form) and return stdout. Raise RpcError on failure."""
+    env = None
+    if extra_env:
+        env = os.environ.copy()
+        env.update(extra_env)
     try:
         p = subprocess.run(
-            cmd, capture_output=True, text=True, input=input_text, timeout=120
+            cmd, capture_output=True, text=True, input=input_text, timeout=120,
+            cwd=cwd, env=env,
         )
     except FileNotFoundError:
         raise RpcError(f"command not found: {cmd[0]}")
@@ -91,11 +99,19 @@ def read_file(path):
 # ================================================================ OpenVPN
 def ovpn_easyrsa(*args, days=None):
     ers = os.path.join(CONF["easyrsa_dir"], "easyrsa")
+    if not os.path.exists(ers):
+        raise RpcError(
+            f"easyrsa not found at {ers}. Set EASYRSA_DIR in "
+            f"/etc/openvpn-agent.env to the dir holding the 'easyrsa' script and 'pki/'.")
     cmd = [ers, "--batch"]
     if days:
         cmd.append(f"--days={int(days)}")
     cmd += list(args)
-    return run(cmd)
+    # Run from EASYRSA_DIR and pin the PKI explicitly so easyrsa reads/writes
+    # the right pki regardless of the agent's working directory.
+    return run(cmd, cwd=CONF["easyrsa_dir"],
+               extra_env={"EASYRSA_PKI": CONF["easyrsa_pki"],
+                          "EASYRSA_BATCH": "1"})
 
 
 def openvpn_create_user(params):
@@ -104,7 +120,7 @@ def openvpn_create_user(params):
         raise RpcError("invalid name")
     days = params.get("expiry_days")
 
-    pki = os.path.join(CONF["easyrsa_dir"], "pki")
+    pki = CONF["easyrsa_pki"]
     crt = os.path.join(pki, "issued", f"{name}.crt")
     if os.path.exists(crt):
         raise RpcError("certificate already exists on host")
@@ -161,7 +177,7 @@ def openvpn_revoke_user(params):
     ovpn_easyrsa("revoke", name)
     ovpn_easyrsa("gen-crl")
     # publish the fresh CRL where the server reads it
-    src = os.path.join(CONF["easyrsa_dir"], "pki", "crl.pem")
+    src = os.path.join(CONF["easyrsa_pki"], "crl.pem")
     if os.path.exists(src):
         run(["install", "-m", "644", src, CONF["crl_dest"]])
     return {"revoked": name}
@@ -199,7 +215,7 @@ def openvpn_remove_ccd(params):
 
 
 def openvpn_list_certs(_params):
-    idx = os.path.join(CONF["easyrsa_dir"], "pki", "index.txt")
+    idx = os.path.join(CONF["easyrsa_pki"], "index.txt")
     out = []
     if os.path.exists(idx):
         for line in read_file(idx).splitlines():
