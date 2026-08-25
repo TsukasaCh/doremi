@@ -551,6 +551,39 @@ def _parse_table(table):
     return _parse_iptables_text(out)
 
 
+def _re1(pat, s):
+    m = re.search(pat, s)
+    return m.group(1) if m else ""
+
+
+def iptables_list_forwards(_params):
+    """Parse every DNAT/REDIRECT rule in the nat table into structured
+    port-forwards, so the dashboard can show existing (incl. manual) forwards."""
+    out = _ipt("-t", "nat", "-S", check=False)
+    fwds = []
+    for line in out.splitlines():
+        if "-j DNAT" not in line and "-j REDIRECT" not in line:
+            continue
+        to = _re1(r"--to-destination (\S+)", line)
+        to_ip, to_port = to, ""
+        if to and ":" in to:
+            to_ip, to_port = to.rsplit(":", 1)
+        comment = _re1(r'--comment "([^"]*)"', line) or _re1(r"--comment (\S+)", line)
+        redir = _re1(r"--to-ports (\S+)", line)  # REDIRECT target
+        fwds.append({
+            "chain": _re1(r"^-A (\S+)", line),
+            "proto": _re1(r"-p (\S+)", line),
+            "in": _re1(r"-i (\S+)", line),
+            "public_ip": _re1(r"-d (\S+)", line),
+            "public_port": _re1(r"--dport (\S+)", line),
+            "dest_ip": to_ip,
+            "dest_port": to_port or redir,
+            "comment": comment,
+            "managed": comment.startswith("ovpnmgr"),
+        })
+    return {"forwards": fwds}
+
+
 def iptables_list(params):
     """Return structured chains grouped by table.
       full=False (default): filter (FORWARD + VPN_ACL + per-user) + full nat.
@@ -652,6 +685,7 @@ METHODS_IPTABLES = {
     "iptables.remove_acl": iptables_remove_acl,
     "iptables.list": iptables_list,
     "iptables.apply_forwards": iptables_apply_forwards,
+    "iptables.list_forwards": iptables_list_forwards,
 }
 
 

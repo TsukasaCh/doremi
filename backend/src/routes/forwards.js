@@ -17,6 +17,15 @@ export async function applyForwards() {
 // GET /api/forwards
 router.get('/', (req, res) => res.json(allForwards()));
 
+// GET /api/forwards/existing — all DNAT forwards on the host (incl. manual)
+router.get('/existing', async (req, res) => {
+  try {
+    res.json(await proxmoxAgent.listForwards());
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 // POST /api/forwards  { label?, proto, public_port, dest_ip, dest_port }
 router.post('/', async (req, res) => {
   let { label, proto = 'tcp', public_port, dest_ip, dest_port } = req.body || {};

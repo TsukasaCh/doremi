@@ -683,11 +683,12 @@ async function renderForwardsView() {
           <div style="flex:1"><label>Label (opsional)</label><input id="pf-label" placeholder="ctf: mirage" /></div>
           <button class="primary" id="pf-add">Tambah</button>
         </div>
+        <h3 style="font-size:14px;margin:6px 0 8px">Dikelola dashboard</h3>
         ${list.length === 0
-          ? '<div class="muted empty">Belum ada port-forward.</div>'
+          ? '<div class="muted">Belum ada port-forward yang dibuat lewat dashboard.</div>'
           : `<table>
               <thead><tr><th>Label</th><th>Proto</th><th>Port Publik</th><th>Tujuan</th><th></th></tr></thead>
-              <tbody>${list.map((f) => `<tr>
+              <tbody id="pf-managed">${list.map((f) => `<tr>
                 <td>${esc(f.label || '—')}</td>
                 <td>${esc(f.proto)}</td>
                 <td><code>${f.public_port}</code></td>
@@ -695,15 +696,42 @@ async function renderForwardsView() {
                 <td class="actions"></td>
               </tr>`).join('')}</tbody>
             </table>`}
+      </section>
+      <section class="card" id="pf-existing-card">
+        <h3 style="font-size:14px;margin:0 0 4px">Terdeteksi di host <span class="muted" style="font-weight:400">(semua DNAT, termasuk manual/CTF)</span></h3>
+        <div id="pf-existing"><div class="muted">Memuat…</div></div>
       </section>`;
     $('#pf-add').addEventListener('click', addForward);
-    const rows = $('#view-root').querySelectorAll('tbody tr');
+    const rows = $('#pf-managed') ? $('#pf-managed').querySelectorAll('tr') : [];
     list.forEach((f, i) => {
       const cell = rows[i] && rows[i].querySelector('.actions');
       if (cell) cell.append(mkBtn('Hapus', 'small danger', () => delForward(f)));
     });
+    loadExistingForwards();
   } catch (err) {
     $('#view-root').innerHTML = `<section class="card"><div class="error">${esc(err.message)}</div></section>`;
+  }
+}
+async function loadExistingForwards() {
+  const el = $('#pf-existing');
+  if (!el) return;
+  try {
+    const r = await api('/forwards/existing');
+    const fw = r.forwards || [];
+    if (fw.length === 0) { el.innerHTML = '<div class="muted">Tidak ada rule DNAT di host.</div>'; return; }
+    el.innerHTML = `<div class="ipt-scroll"><table class="ipt-table">
+      <thead><tr><th>Proto</th><th>IP Publik</th><th>Port Publik</th><th>Tujuan</th><th>In</th><th>Komentar</th><th>Sumber</th></tr></thead>
+      <tbody>${fw.map((f) => `<tr>
+        <td>${esc(f.proto || '—')}</td>
+        <td><code>${esc(f.public_ip || 'any')}</code></td>
+        <td><code>${esc(f.public_port || '—')}</code></td>
+        <td>→ <code>${esc(f.dest_ip || '')}${f.dest_port ? ':' + esc(f.dest_port) : ''}</code></td>
+        <td>${esc(f.in || '*')}</td>
+        <td class="muted ipt-extra">${esc(f.comment || '')}</td>
+        <td>${f.managed ? '<span class="badge active">dashboard</span>' : '<span class="badge">manual</span>'}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="error" style="margin:0">${esc(err.message)}</div>`;
   }
 }
 async function addForward() {

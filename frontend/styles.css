@@ -125,7 +125,7 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: upp
 tbody tr:hover { background: var(--panel-2); }
 .empty { padding: 30px; text-align: center; }
 
-.badge { padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge { padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--panel-2); color: var(--muted); }
 .badge.active { background: #14321f; color: var(--green); }
 .badge.expired { background: #3a2a12; color: var(--amber); }
 .badge.revoked { background: #3a1e22; color: var(--red); }
