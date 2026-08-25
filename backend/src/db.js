@@ -65,6 +65,18 @@ CREATE TABLE IF NOT EXISTS user_acl_groups (
   group_id INTEGER NOT NULL REFERENCES acl_groups(id) ON DELETE CASCADE,
   PRIMARY KEY (user_id, group_id)
 );
+
+-- Port-forward (DNAT) rules managed on the Proxmox host
+CREATE TABLE IF NOT EXISTS port_forwards (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  label       TEXT,
+  proto       TEXT NOT NULL DEFAULT 'tcp',    -- tcp | udp
+  public_port INTEGER NOT NULL,
+  dest_ip     TEXT NOT NULL,
+  dest_port   INTEGER NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (proto, public_port)
+);
 `);
 
 // --- migrations (idempotent) ---

@@ -151,6 +151,7 @@ const VIEWS = {
   users: { title: 'Pengguna', render: renderUsersView },
   connected: { title: 'Client Aktif', render: renderConnectedView },
   groups: { title: 'ACL Group', render: renderGroupsView },
+  forwards: { title: 'Port Forward', render: renderForwardsView },
   iptables: { title: 'iptables · Proxmox host', render: renderIptablesView },
   audit: { title: 'Audit Log', render: renderAuditView },
 };
@@ -663,6 +664,69 @@ async function renderConnectedView() {
   } catch (err) {
     $('#view-root').innerHTML = `<section class="card"><div class="error">${esc(err.message)}</div></section>`;
   }
+}
+
+// ---------- Port forward view ----------
+async function renderForwardsView() {
+  $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', renderForwardsView));
+  $('#view-root').innerHTML = '<section class="card"><div class="muted">Memuat…</div></section>';
+  try {
+    const list = await api('/forwards');
+    $('#view-root').innerHTML = `
+      <section class="card">
+        <p class="muted" style="margin-top:0">Teruskan port publik host Proxmox ke IP:port internal (DNAT). Cocok buat nambah service CTF tanpa SSH.</p>
+        <div class="acl-add" style="margin:10px 0 18px">
+          <div><label>Proto</label><select id="pf-proto"><option>tcp</option><option>udp</option></select></div>
+          <div><label>Port publik</label><input id="pf-pub" type="number" placeholder="13035" style="width:110px" /></div>
+          <div style="flex:1"><label>IP tujuan</label><input id="pf-dip" placeholder="10.10.10.212" /></div>
+          <div><label>Port tujuan</label><input id="pf-dport" type="number" placeholder="13035" style="width:110px" /></div>
+          <div style="flex:1"><label>Label (opsional)</label><input id="pf-label" placeholder="ctf: mirage" /></div>
+          <button class="primary" id="pf-add">Tambah</button>
+        </div>
+        ${list.length === 0
+          ? '<div class="muted empty">Belum ada port-forward.</div>'
+          : `<table>
+              <thead><tr><th>Label</th><th>Proto</th><th>Port Publik</th><th>Tujuan</th><th></th></tr></thead>
+              <tbody>${list.map((f) => `<tr>
+                <td>${esc(f.label || '—')}</td>
+                <td>${esc(f.proto)}</td>
+                <td><code>${f.public_port}</code></td>
+                <td>→ <code>${esc(f.dest_ip)}:${f.dest_port}</code></td>
+                <td class="actions"></td>
+              </tr>`).join('')}</tbody>
+            </table>`}
+      </section>`;
+    $('#pf-add').addEventListener('click', addForward);
+    const rows = $('#view-root').querySelectorAll('tbody tr');
+    list.forEach((f, i) => {
+      const cell = rows[i] && rows[i].querySelector('.actions');
+      if (cell) cell.append(mkBtn('Hapus', 'small danger', () => delForward(f)));
+    });
+  } catch (err) {
+    $('#view-root').innerHTML = `<section class="card"><div class="error">${esc(err.message)}</div></section>`;
+  }
+}
+async function addForward() {
+  const body = {
+    proto: $('#pf-proto').value,
+    public_port: $('#pf-pub').value,
+    dest_ip: $('#pf-dip').value.trim(),
+    dest_port: $('#pf-dport').value,
+    label: $('#pf-label').value.trim() || null,
+  };
+  try {
+    await api('/forwards', { method: 'POST', body: JSON.stringify(body) });
+    toast('Port-forward ditambahkan & diterapkan');
+    renderForwardsView();
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function delForward(f) {
+  if (!confirm(`Hapus port-forward ${f.proto}/${f.public_port} → ${f.dest_ip}:${f.dest_port}?`)) return;
+  try {
+    await api(`/forwards/${f.id}`, { method: 'DELETE' });
+    toast('Port-forward dihapus');
+    renderForwardsView();
+  } catch (err) { toast(err.message, 'err'); }
 }
 
 // ---------- Boot ----------

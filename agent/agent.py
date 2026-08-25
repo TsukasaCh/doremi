@@ -72,6 +72,10 @@ CONF = {
     "parent_chain": env("PARENT_CHAIN", "VPN_ACL"),
     # where the per-user jump lives: FORWARD (routed traffic through the box)
     "hook_chain": env("HOOK_CHAIN", "FORWARD"),
+    # port-forward (DNAT) manager
+    "wan_iface": env("WAN_IFACE", ""),          # optional; empty = any interface
+    "pf_pre_chain": env("PF_PRE_CHAIN", "VPN_FWD_PRE"),  # in nat PREROUTING
+    "pf_fwd_chain": env("PF_FWD_CHAIN", "VPN_FWD"),      # in filter FORWARD
 }
 
 NAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{2,40}$")
@@ -558,11 +562,69 @@ def iptables_list(params):
     for t in names:
         chains = _parse_table(t)
         if not full and t == "filter":
-            keep = (CONF["hook_chain"], CONF["parent_chain"])
+            keep = (CONF["hook_chain"], CONF["parent_chain"], CONF["pf_fwd_chain"])
             chains = [c for c in chains
                       if c["name"] in keep or c["name"].startswith("VACL_")]
         tables.append({"table": t, "chains": chains})
     return {"tables": tables, "full": full}
+
+
+def _ensure_pf_chains():
+    b = CONF["iptables_bin"]
+    pre, fwd = CONF["pf_pre_chain"], CONF["pf_fwd_chain"]
+    # nat PREROUTING -> pre
+    if subprocess.run([b, "-t", "nat", "-nL", pre], capture_output=True).returncode != 0:
+        _ipt("-t", "nat", "-N", pre)
+    if subprocess.run([b, "-t", "nat", "-C", "PREROUTING", "-j", pre],
+                      capture_output=True).returncode != 0:
+        _ipt("-t", "nat", "-I", "PREROUTING", "-j", pre)
+    # filter FORWARD -> fwd
+    if subprocess.run([b, "-nL", fwd], capture_output=True).returncode != 0:
+        _ipt("-N", fwd)
+    if subprocess.run([b, "-C", "FORWARD", "-j", fwd], capture_output=True).returncode != 0:
+        _ipt("-I", "FORWARD", "-j", fwd)
+
+
+def iptables_apply_forwards(params):
+    """Replace the managed port-forward set. Backend sends the full list; we
+    flush our dedicated chains and rebuild (DNAT + matching FORWARD accept)."""
+    forwards = params.get("forwards", [])
+    # forwarding must be on for DNAT to work
+    run(["sysctl", "-w", "net.ipv4.ip_forward=1"], check=False)
+    _ensure_pf_chains()
+    pre, fwd = CONF["pf_pre_chain"], CONF["pf_fwd_chain"]
+    _ipt("-t", "nat", "-F", pre)
+    _ipt("-F", fwd)
+
+    applied = 0
+    for f in forwards:
+        proto = (f.get("proto") or "tcp").lower()
+        if proto not in ("tcp", "udp"):
+            raise RpcError(f"bad proto: {proto}")
+        dip = f.get("dest_ip", "")
+        if not IP_RE.match(dip):
+            raise RpcError(f"bad dest_ip: {dip}")
+        try:
+            pub, dport = int(f["public_port"]), int(f["dest_port"])
+        except (KeyError, ValueError, TypeError):
+            raise RpcError("bad port")
+        if not (1 <= pub <= 65535 and 1 <= dport <= 65535):
+            raise RpcError("port out of range")
+        label = re.sub(r"[^A-Za-z0-9 _.:@-]", "", str(f.get("label", "")))[:200]
+        comment = f"ovpnmgr:{label}" if label else "ovpnmgr-pf"
+
+        dnat = ["-t", "nat", "-A", pre, "-p", proto]
+        if CONF["wan_iface"]:
+            dnat += ["-i", CONF["wan_iface"]]
+        dnat += ["--dport", str(pub), "-m", "comment", "--comment", comment,
+                 "-j", "DNAT", "--to-destination", f"{dip}:{dport}"]
+        _ipt(*dnat)
+        _ipt("-A", fwd, "-p", proto, "-d", dip, "--dport", str(dport),
+             "-m", "comment", "--comment", comment, "-j", "ACCEPT")
+        applied += 1
+
+    _persist()
+    return {"applied": applied}
 
 
 def _persist():
@@ -589,6 +651,7 @@ METHODS_IPTABLES = {
     "iptables.apply_acl": iptables_apply_acl,
     "iptables.remove_acl": iptables_remove_acl,
     "iptables.list": iptables_list,
+    "iptables.apply_forwards": iptables_apply_forwards,
 }
 
 
