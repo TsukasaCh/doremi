@@ -387,14 +387,33 @@ def iptables_remove_acl(params):
     return {"removed": ip}
 
 
-def iptables_list(_params):
-    """Return the full existing ruleset on the host: the whole filter table
-    (all chains, incl. the dashboard's VPN_ACL + per-user chains) and the nat
-    table (so port-forward / DNAT / MASQUERADE rules are visible too)."""
-    fil = _ipt("-L", "-n", "-v", "--line-numbers", check=False)
+def iptables_list(params):
+    """List the host ruleset.
+      full=False (default): a focused view — the FORWARD chain, the dashboard's
+        VPN_ACL parent + per-user chains, and the whole nat table (port-forward).
+      full=True: every table (filter, nat, mangle, raw), all chains.
+    """
+    if (params or {}).get("full"):
+        parts = []
+        for t in ("filter", "nat", "mangle", "raw"):
+            d = _ipt("-t", t, "-L", "-n", "-v", "--line-numbers", check=False)
+            parts.append(f"########## {t.upper()} TABLE ##########\n" + (d or "(empty)"))
+        return {"raw": "\n\n".join(parts)}
+
+    parent = CONF["parent_chain"]
+    hook = CONF["hook_chain"]
+    fwd = _ipt("-L", hook, "-n", "-v", "--line-numbers", check=False)
+    acl = _ipt("-L", parent, "-n", "-v", "--line-numbers", check=False)
+    children = ""
+    for line in (acl or "").splitlines():
+        m = re.search(r"(VACL_\d+_\d+_\d+_\d+)", line)
+        if m:
+            children += "\n" + _ipt("-L", m.group(1), "-n", "-v", check=False)
     nat = _ipt("-t", "nat", "-L", "-n", "-v", "--line-numbers", check=False)
     raw = (
-        "########## FILTER TABLE ##########\n" + (fil or "(empty)") +
+        f"########## FILTER · {hook} ##########\n" + (fwd or "(empty)") +
+        f"\n\n########## FILTER · {parent} (dashboard) ##########\n" +
+        (acl or "(chain belum dibuat — belum ada ACL user)") + children +
         "\n\n########## NAT TABLE ##########\n" + (nat or "(empty)")
     )
     return {"raw": raw}

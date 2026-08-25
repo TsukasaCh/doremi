@@ -63,8 +63,8 @@ export const proxmoxAgent = {
     callAgent(cfg.agents.proxmox, 'iptables.apply_acl', { vpn_ip: vpnIp, rules }),
   removeAcl: (vpnIp) =>
     callAgent(cfg.agents.proxmox, 'iptables.remove_acl', { vpn_ip: vpnIp }),
-  listAcl: () =>
-    callAgent(cfg.agents.proxmox, 'iptables.list'),
+  listAcl: (full = false) =>
+    callAgent(cfg.agents.proxmox, 'iptables.list', { full }),
 };
 
 export { callAgent };

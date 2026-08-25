@@ -505,11 +505,15 @@ async function delGroupRule(gid, ruleId, draw) {
 }
 
 // ---------- iptables view ----------
-async function renderIptablesView() {
-  $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', renderIptablesView));
+async function renderIptablesView(full = false) {
+  $('#page-actions').innerHTML = '';
+  $('#page-actions').append(
+    mkBtn(full ? 'Tampilan ringkas' : 'Tampilkan semua tabel', 'ghost', () => renderIptablesView(!full)),
+    mkBtn('↻ Refresh', 'ghost', () => renderIptablesView(full))
+  );
   $('#view-root').innerHTML = '<section class="card"><div class="muted">Memuat…</div></section>';
   try {
-    const r = await api('/agents/iptables');
+    const r = await api('/agents/iptables' + (full ? '?full=1' : ''));
     $('#view-root').innerHTML =
       `<section class="card"><pre class="ovpn" style="max-height:none">${esc(r.raw || JSON.stringify(r, null, 2))}</pre></section>`;
   } catch (err) {

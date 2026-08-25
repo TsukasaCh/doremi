@@ -18,10 +18,10 @@ router.get('/status', async (req, res) => {
   res.json(out);
 });
 
-// GET /api/agents/iptables — raw iptables ACL view from the Proxmox host
+// GET /api/agents/iptables[?full=1] — iptables view from the Proxmox host
 router.get('/iptables', async (req, res) => {
   try {
-    const r = await proxmoxAgent.listAcl();
+    const r = await proxmoxAgent.listAcl(req.query.full === '1');
     res.json(r);
   } catch (e) {
     res.status(502).json({ error: e.message });
