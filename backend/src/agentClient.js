@@ -44,8 +44,12 @@ export const openvpnAgent = {
     callAgent(cfg.agents.openvpn, 'openvpn.create_user', { name, expiry_days: expiryDays }),
   revokeUser: (name) =>
     callAgent(cfg.agents.openvpn, 'openvpn.revoke_user', { name }),
-  setCcd: (name, staticIp) =>
-    callAgent(cfg.agents.openvpn, 'openvpn.set_ccd', { name, static_ip: staticIp }),
+  setCcd: (name, staticIp, netmask = cfg.vpn.netmask) =>
+    callAgent(cfg.agents.openvpn, 'openvpn.set_ccd', {
+      name,
+      static_ip: staticIp,
+      netmask,
+    }),
   removeCcd: (name) =>
     callAgent(cfg.agents.openvpn, 'openvpn.remove_ccd', { name }),
   listCerts: () =>

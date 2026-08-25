@@ -174,14 +174,18 @@ def _ccd_path(name):
 def openvpn_set_ccd(params):
     name = params.get("name", "")
     ip = params.get("static_ip", "")
+    # netmask follows the VPN subnet (sent by the backend); fall back to /24
+    netmask = params.get("netmask") or "255.255.255.0"
     if not NAME_RE.match(name):
         raise RpcError("invalid name")
     if not IP_RE.match(ip):
         raise RpcError("invalid static_ip")
+    if not IP_RE.match(netmask):
+        raise RpcError("invalid netmask")
     os.makedirs(CONF["ccd_dir"], exist_ok=True)
     with open(_ccd_path(name), "w") as f:
-        f.write(f"ifconfig-push {ip} 255.255.255.0\n")
-    return {"name": name, "static_ip": ip}
+        f.write(f"ifconfig-push {ip} {netmask}\n")
+    return {"name": name, "static_ip": ip, "netmask": netmask}
 
 
 def openvpn_remove_ccd(params):
