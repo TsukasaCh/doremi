@@ -1,0 +1,17 @@
+{
+  "name": "openvpn-manager-backend",
+  "version": "1.0.0",
+  "description": "Web dashboard backend for managing OpenVPN users, expiry, ACL and iptables via remote agents",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
+  }
+}

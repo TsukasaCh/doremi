@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenVPN Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Login view -->
+  <div id="login-view" class="login-wrap hidden">
+    <form id="login-form" class="card login-card">
+      <h1>🔐 OpenVPN Manager</h1>
+      <p class="muted">Masuk untuk mengelola user VPN</p>
+      <label>Username<input id="login-user" autocomplete="username" required /></label>
+      <label>Password<input id="login-pass" type="password" autocomplete="current-password" required /></label>
+      <button type="submit">Masuk</button>
+      <div id="login-error" class="error"></div>
+    </form>
+  </div>
+
+  <!-- App view -->
+  <div id="app-view" class="hidden">
+    <header class="topbar">
+      <div class="brand">🛡️ OpenVPN Manager</div>
+      <div class="agents" id="agent-status"></div>
+      <div class="spacer"></div>
+      <span id="whoami" class="muted"></span>
+      <button id="logout-btn" class="ghost">Keluar</button>
+    </header>
+
+    <main>
+      <section class="toolbar">
+        <button id="new-user-btn" class="primary">+ User Baru</button>
+        <button id="refresh-btn" class="ghost">↻ Refresh</button>
+        <button id="iptables-btn" class="ghost">Lihat iptables</button>
+        <button id="audit-btn" class="ghost">Audit Log</button>
+      </section>
+
+      <section class="card">
+        <table id="users-table">
+          <thead>
+            <tr>
+              <th>Nama</th><th>IP Statik</th><th>Status</th>
+              <th>Dibuat</th><th>Expiry</th><th>ACL</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="users-body"></tbody>
+        </table>
+        <div id="users-empty" class="muted empty hidden">Belum ada user. Klik "User Baru".</div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal host -->
+  <div id="modal-backdrop" class="modal-backdrop hidden">
+    <div id="modal" class="card modal"></div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
