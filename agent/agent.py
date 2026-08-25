@@ -387,36 +387,63 @@ def iptables_remove_acl(params):
     return {"removed": ip}
 
 
+def _parse_iptables_text(text):
+    """Parse `iptables -L -n -v --line-numbers` output into a list of chains,
+    each: {name, policy, info, rules:[{num,pkts,bytes,target,prot,opt,in,out,
+    source,destination,extra}]}."""
+    chains = []
+    cur = None
+    for line in (text or "").splitlines():
+        if line.startswith("Chain "):
+            m = re.match(r"^Chain (\S+) \((.*)\)\s*$", line)
+            name = m.group(1) if m else line[6:].strip()
+            meta = m.group(2) if m else ""
+            policy, info = None, meta
+            pm = re.match(r"policy (\S+)\s*(.*)", meta)
+            if pm:
+                policy, info = pm.group(1), pm.group(2)
+            cur = {"name": name, "policy": policy, "info": info, "rules": []}
+            chains.append(cur)
+            continue
+        s = line.strip()
+        if not s or s.startswith("num ") or s.startswith("pkts ") or s.startswith("target "):
+            continue  # header / blank
+        if cur is None:
+            continue
+        parts = line.split(None, 10)
+        if len(parts) < 10:
+            continue
+        cur["rules"].append({
+            "num": parts[0], "pkts": parts[1], "bytes": parts[2],
+            "target": parts[3], "prot": parts[4], "opt": parts[5],
+            "in": parts[6], "out": parts[7],
+            "source": parts[8], "destination": parts[9],
+            "extra": parts[10] if len(parts) > 10 else "",
+        })
+    return chains
+
+
+def _parse_table(table):
+    out = _ipt("-t", table, "-L", "-n", "-v", "--line-numbers", check=False)
+    return _parse_iptables_text(out)
+
+
 def iptables_list(params):
-    """List the host ruleset.
-      full=False (default): a focused view — the FORWARD chain, the dashboard's
-        VPN_ACL parent + per-user chains, and the whole nat table (port-forward).
+    """Return structured chains grouped by table.
+      full=False (default): filter (FORWARD + VPN_ACL + per-user) + full nat.
       full=True: every table (filter, nat, mangle, raw), all chains.
     """
-    if (params or {}).get("full"):
-        parts = []
-        for t in ("filter", "nat", "mangle", "raw"):
-            d = _ipt("-t", t, "-L", "-n", "-v", "--line-numbers", check=False)
-            parts.append(f"########## {t.upper()} TABLE ##########\n" + (d or "(empty)"))
-        return {"raw": "\n\n".join(parts)}
-
-    parent = CONF["parent_chain"]
-    hook = CONF["hook_chain"]
-    fwd = _ipt("-L", hook, "-n", "-v", "--line-numbers", check=False)
-    acl = _ipt("-L", parent, "-n", "-v", "--line-numbers", check=False)
-    children = ""
-    for line in (acl or "").splitlines():
-        m = re.search(r"(VACL_\d+_\d+_\d+_\d+)", line)
-        if m:
-            children += "\n" + _ipt("-L", m.group(1), "-n", "-v", check=False)
-    nat = _ipt("-t", "nat", "-L", "-n", "-v", "--line-numbers", check=False)
-    raw = (
-        f"########## FILTER · {hook} ##########\n" + (fwd or "(empty)") +
-        f"\n\n########## FILTER · {parent} (dashboard) ##########\n" +
-        (acl or "(chain belum dibuat — belum ada ACL user)") + children +
-        "\n\n########## NAT TABLE ##########\n" + (nat or "(empty)")
-    )
-    return {"raw": raw}
+    full = bool((params or {}).get("full"))
+    names = ["filter", "nat", "mangle", "raw"] if full else ["filter", "nat"]
+    tables = []
+    for t in names:
+        chains = _parse_table(t)
+        if not full and t == "filter":
+            keep = (CONF["hook_chain"], CONF["parent_chain"])
+            chains = [c for c in chains
+                      if c["name"] in keep or c["name"].startswith("VACL_")]
+        tables.append({"table": t, "chains": chains})
+    return {"tables": tables, "full": full}
 
 
 def _persist():

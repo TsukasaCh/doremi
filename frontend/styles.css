@@ -157,6 +157,26 @@ pre.ovpn { background: #0a0e13; border: 1px solid var(--border); border-radius: 
 .chip-x:hover { background: #2a1a1e; }
 .modal h3 { color: var(--text); }
 
+/* iptables structured view */
+.ipt-table-card { margin-bottom: 18px; }
+.ipt-table-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 14px; }
+.ipt-table-title span { color: var(--primary); }
+.ipt-chain { margin-bottom: 16px; }
+.ipt-chain:last-child { margin-bottom: 0; }
+.ipt-chain-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ipt-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.ipt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ipt-table th { background: var(--panel-2); color: var(--muted); font-size: 11px; padding: 8px 10px; white-space: nowrap; }
+.ipt-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.ipt-table tbody tr:last-child td { border-bottom: none; }
+.ipt-table tbody tr:hover { background: var(--panel-2); }
+.ipt-num { color: var(--muted); }
+.ipt-extra { white-space: normal; font-size: 12px; }
+.ipt-target { padding: 1px 8px; border-radius: 6px; font-weight: 600; font-size: 12px; background: var(--panel-2); }
+.ipt-target.t-accept { background: #14321f; color: var(--green); }
+.ipt-target.t-drop { background: #3a1e22; color: var(--red); }
+.ipt-target.t-nat { background: #1e2f3a; color: #38bdf8; }
+
 /* Toast */
 .toast { position: fixed; bottom: 24px; right: 24px; background: var(--panel-2); border: 1px solid var(--border); padding: 12px 18px; border-radius: 10px; z-index: 100; max-width: 400px; }
 .toast.ok { border-color: var(--green); }

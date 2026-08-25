@@ -505,6 +505,35 @@ async function delGroupRule(gid, ruleId, draw) {
 }
 
 // ---------- iptables view ----------
+function iptTargetClass(t) {
+  if (t === 'ACCEPT' || t === 'RETURN') return 't-accept';
+  if (t === 'DROP' || t === 'REJECT') return 't-drop';
+  if (t === 'DNAT' || t === 'SNAT' || t === 'MASQUERADE') return 't-nat';
+  return '';
+}
+function renderIptChain(c) {
+  const rows = c.rules.map((r) => `<tr>
+    <td class="ipt-num">${esc(r.num)}</td>
+    <td><span class="ipt-target ${iptTargetClass(r.target)}">${esc(r.target)}</span></td>
+    <td>${esc(r.prot)}</td>
+    <td>${esc(r.in)}</td><td>${esc(r.out)}</td>
+    <td><code>${esc(r.source)}</code></td>
+    <td><code>${esc(r.destination)}</code></td>
+    <td class="muted ipt-extra">${esc(r.extra || '')}</td>
+  </tr>`).join('');
+  return `<div class="ipt-chain">
+    <div class="ipt-chain-head">
+      <strong>${esc(c.name)}</strong>
+      ${c.policy ? `<span class="badge active">policy ${esc(c.policy)}</span>` : ''}
+      ${c.info ? `<span class="muted" style="font-size:12px">${esc(c.info)}</span>` : ''}
+    </div>
+    ${c.rules.length === 0
+      ? '<div class="muted" style="padding:6px 2px">(tidak ada rule)</div>'
+      : `<div class="ipt-scroll"><table class="ipt-table">
+          <thead><tr><th>#</th><th>Target</th><th>Proto</th><th>In</th><th>Out</th><th>Source</th><th>Destination</th><th>Info</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>`}
+  </div>`;
+}
 async function renderIptablesView(full = false) {
   $('#page-actions').innerHTML = '';
   $('#page-actions').append(
@@ -514,8 +543,15 @@ async function renderIptablesView(full = false) {
   $('#view-root').innerHTML = '<section class="card"><div class="muted">Memuat…</div></section>';
   try {
     const r = await api('/agents/iptables' + (full ? '?full=1' : ''));
-    $('#view-root').innerHTML =
-      `<section class="card"><pre class="ovpn" style="max-height:none">${esc(r.raw || JSON.stringify(r, null, 2))}</pre></section>`;
+    if (!r.tables) { // fallback for older agent returning raw text
+      $('#view-root').innerHTML = `<section class="card"><pre class="ovpn" style="max-height:none">${esc(r.raw || JSON.stringify(r, null, 2))}</pre></section>`;
+      return;
+    }
+    $('#view-root').innerHTML = r.tables.map((t) => `
+      <section class="card ipt-table-card">
+        <div class="ipt-table-title">Tabel <span>${esc(t.table)}</span></div>
+        ${t.chains.length === 0 ? '<div class="muted">Tidak ada chain relevan.</div>' : t.chains.map(renderIptChain).join('')}
+      </section>`).join('');
   } catch (err) {
     $('#view-root').innerHTML = `<section class="card"><div class="error">${esc(err.message)}</div></section>`;
   }
