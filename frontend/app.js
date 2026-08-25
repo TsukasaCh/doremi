@@ -40,7 +40,12 @@ async function checkAuth() {
   }
 }
 function showLogin() { $('#login-view').classList.remove('hidden'); $('#app-view').classList.add('hidden'); }
-function showApp() { $('#login-view').classList.add('hidden'); $('#app-view').classList.remove('hidden'); refreshAll(); }
+function showApp() {
+  $('#login-view').classList.add('hidden');
+  $('#app-view').classList.remove('hidden');
+  showView('users');
+  refreshAll();
+}
 
 $('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -90,9 +95,48 @@ function refreshAll() {
   loadAgentStatus();
 }
 
-// ---------- Render users ----------
+// ---------- View router ----------
+const VIEWS = {
+  users: { title: 'Pengguna', render: renderUsersView },
+  groups: { title: 'ACL Group', render: renderGroupsView },
+  iptables: { title: 'iptables · Proxmox host', render: renderIptablesView },
+  audit: { title: 'Audit Log', render: renderAuditView },
+};
+let CURRENT_VIEW = 'users';
+function showView(name) {
+  CURRENT_VIEW = name;
+  document.querySelectorAll('.nav-item').forEach((b) =>
+    b.classList.toggle('active', b.dataset.view === name));
+  $('#page-title').textContent = VIEWS[name].title;
+  $('#page-actions').innerHTML = '';
+  $('#view-root').innerHTML = '';
+  VIEWS[name].render();
+}
+document.querySelectorAll('.nav-item').forEach((b) =>
+  b.addEventListener('click', () => showView(b.dataset.view)));
+
+// ---------- Users view ----------
+function renderUsersView() {
+  const addBtn = mkBtn('+ User Baru', 'primary', openCreateUser);
+  const refBtn = mkBtn('↻ Refresh', 'ghost', refreshAll);
+  $('#page-actions').append(addBtn, refBtn);
+  $('#view-root').innerHTML = `
+    <section class="card">
+      <table id="users-table">
+        <thead><tr>
+          <th>Nama</th><th>IP Statik</th><th>Status</th>
+          <th>Dibuat</th><th>Expiry</th><th>ACL</th><th></th>
+        </tr></thead>
+        <tbody id="users-body"></tbody>
+      </table>
+      <div id="users-empty" class="muted empty hidden">Belum ada user. Klik "+ User Baru".</div>
+    </section>`;
+  renderUsers();
+}
+
 function renderUsers() {
   const body = $('#users-body');
+  if (!body) return; // not on the users view right now
   body.innerHTML = '';
   $('#users-empty').classList.toggle('hidden', USERS.length > 0);
 
@@ -138,7 +182,7 @@ function closeModal() { $('#modal-backdrop').classList.add('hidden'); }
 $('#modal-backdrop').addEventListener('click', (e) => { if (e.target.id === 'modal-backdrop') closeModal(); });
 
 // ---------- Create user ----------
-$('#new-user-btn').addEventListener('click', () => {
+function openCreateUser() {
   openModal(`
     <h2>Buat User VPN Baru</h2>
     <label>Nama user<input id="nu-name" placeholder="mis. budi.santoso" /></label>
@@ -153,7 +197,7 @@ $('#new-user-btn').addEventListener('click', () => {
   $('#nu-cancel').addEventListener('click', closeModal);
   $('#nu-create').addEventListener('click', createUser);
   $('#nu-name').focus();
-});
+}
 
 async function createUser() {
   const name = $('#nu-name').value.trim();
@@ -338,12 +382,13 @@ async function removeGroup(u, groupId, draw) {
   } catch (err) { toast(err.message, 'err'); }
 }
 
-// ---------- Group manager ----------
-function openGroupsModal() {
+// ---------- Groups view ----------
+function renderGroupsView() {
+  $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', () => loadGroups().then(draw)));
   const draw = () => {
-    openModal(`
-      <h2>Kelola ACL Group</h2>
-      <p class="muted">Group = kumpulan rule yang bisa dipakai ulang. Edit rule group → semua user yang pakai otomatis ke-update.</p>
+    $('#view-root').innerHTML = `
+      <section class="card">
+      <p class="muted" style="margin-top:0">Group = kumpulan rule yang bisa dipakai ulang. Edit rule group → semua user yang pakai otomatis ke-update.</p>
       <div class="acl-add" style="margin:10px 0 16px">
         <div style="flex:1"><label>Nama group baru</label><input id="ng-name" placeholder="mis. Web Only" /></div>
         <div style="flex:1.4"><label>Deskripsi (opsional)</label><input id="ng-desc" placeholder="mis. HTTP/HTTPS saja" /></div>
@@ -352,7 +397,7 @@ function openGroupsModal() {
       <div id="groups-list">
         ${GROUPS.length === 0 ? '<div class="muted">Belum ada group.</div>' : ''}
         ${GROUPS.map((g) => `
-          <div class="card" style="margin-bottom:12px;padding:14px">
+          <div class="card nested" style="margin-bottom:12px;padding:14px">
             <div style="display:flex;align-items:center;gap:10px">
               <strong>${esc(g.name)}</strong>
               <span class="muted" style="font-size:12px">${esc(g.description || '')}</span>
@@ -379,9 +424,8 @@ function openGroupsModal() {
             </div>
           </div>`).join('')}
       </div>
-      <div class="modal-actions"><button class="ghost" id="grp-mgr-close">Tutup</button></div>`);
+      </section>`;
 
-    $('#grp-mgr-close').addEventListener('click', () => { closeModal(); loadUsers(); });
     $('#ng-create').addEventListener('click', () => createGroup(draw));
     $('#groups-list').querySelectorAll('[data-delgrp]').forEach((b) =>
       b.addEventListener('click', () => deleteGroup(b.dataset.delgrp, draw)));
@@ -437,37 +481,39 @@ async function delGroupRule(gid, ruleId, draw) {
   } catch (err) { toast(err.message, 'err'); }
 }
 
-// ---------- iptables & audit views ----------
-$('#iptables-btn').addEventListener('click', async () => {
+// ---------- iptables view ----------
+async function renderIptablesView() {
+  $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', renderIptablesView));
+  $('#view-root').innerHTML = '<section class="card"><div class="muted">Memuat…</div></section>';
   try {
     const r = await api('/agents/iptables');
-    openModal(`
-      <h2>iptables ACL (Proxmox host)</h2>
-      <pre class="ovpn">${esc(r.raw || JSON.stringify(r, null, 2))}</pre>
-      <div class="modal-actions"><button class="ghost" onclick="document.getElementById('modal-backdrop').classList.add('hidden')">Tutup</button></div>`);
-  } catch (err) { toast(err.message, 'err'); }
-});
+    $('#view-root').innerHTML =
+      `<section class="card"><pre class="ovpn" style="max-height:none">${esc(r.raw || JSON.stringify(r, null, 2))}</pre></section>`;
+  } catch (err) {
+    $('#view-root').innerHTML = `<section class="card"><div class="error">${esc(err.message)}</div></section>`;
+  }
+}
 
-$('#audit-btn').addEventListener('click', async () => {
+// ---------- audit view ----------
+async function renderAuditView() {
+  $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', renderAuditView));
+  $('#view-root').innerHTML = '<section class="card"><div class="muted">Memuat…</div></section>';
   try {
     const rows = await api('/audit');
-    openModal(`
-      <h2>Audit Log</h2>
-      <div style="max-height:400px;overflow:auto">
-      <table><thead><tr><th>Waktu</th><th>Aktor</th><th>Aksi</th><th>Target</th><th>Detail</th></tr></thead>
-      <tbody>${rows.map((r) => `<tr>
-        <td>${fmtDate(r.ts)}</td><td>${esc(r.actor)}</td>
-        <td>${r.ok ? '' : '⚠️ '}${esc(r.action)}</td><td>${esc(r.target || '')}</td>
-        <td class="muted">${esc(r.detail || '')}</td></tr>`).join('')}</tbody></table></div>
-      <div class="modal-actions"><button class="ghost" onclick="document.getElementById('modal-backdrop').classList.add('hidden')">Tutup</button></div>`);
-  } catch (err) { toast(err.message, 'err'); }
-});
-
-$('#groups-btn').addEventListener('click', () => {
-  loadGroups().then(openGroupsModal).catch((e) => toast(e.message, 'err'));
-});
-
-$('#refresh-btn').addEventListener('click', refreshAll);
+    $('#view-root').innerHTML = `
+      <section class="card">
+        <table>
+          <thead><tr><th>Waktu</th><th>Aktor</th><th>Aksi</th><th>Target</th><th>Detail</th></tr></thead>
+          <tbody>${rows.map((r) => `<tr>
+            <td>${fmtDate(r.ts)}</td><td>${esc(r.actor)}</td>
+            <td>${r.ok ? '' : '⚠️ '}${esc(r.action)}</td><td>${esc(r.target || '')}</td>
+            <td class="muted">${esc(r.detail || '')}</td></tr>`).join('')}</tbody>
+        </table>
+      </section>`;
+  } catch (err) {
+    $('#view-root').innerHTML = `<section class="card"><div class="error">${esc(err.message)}</div></section>`;
+  }
+}
 
 // ---------- Boot ----------
 checkAuth();

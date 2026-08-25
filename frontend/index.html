@@ -19,37 +19,33 @@
     </form>
   </div>
 
-  <!-- App view -->
-  <div id="app-view" class="hidden">
-    <header class="topbar">
-      <div class="brand">🛡️ OpenVPN Manager</div>
-      <div class="agents" id="agent-status"></div>
-      <div class="spacer"></div>
-      <span id="whoami" class="muted"></span>
-      <button id="logout-btn" class="ghost">Keluar</button>
-    </header>
+  <!-- App shell: sidebar + content -->
+  <div id="app-view" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand">🛡️ <span>OpenVPN<br>Manager</span></div>
 
-    <main>
-      <section class="toolbar">
-        <button id="new-user-btn" class="primary">+ User Baru</button>
-        <button id="groups-btn" class="ghost">🗂️ Kelola Group</button>
-        <button id="refresh-btn" class="ghost">↻ Refresh</button>
-        <button id="iptables-btn" class="ghost">Lihat iptables</button>
-        <button id="audit-btn" class="ghost">Audit Log</button>
-      </section>
+      <nav class="nav">
+        <button class="nav-item active" data-view="users"><span class="ic">👤</span> Pengguna</button>
+        <button class="nav-item" data-view="groups"><span class="ic">🗂️</span> ACL Group</button>
+        <button class="nav-item" data-view="iptables"><span class="ic">🧱</span> iptables</button>
+        <button class="nav-item" data-view="audit"><span class="ic">📜</span> Audit Log</button>
+      </nav>
 
-      <section class="card">
-        <table id="users-table">
-          <thead>
-            <tr>
-              <th>Nama</th><th>IP Statik</th><th>Status</th>
-              <th>Dibuat</th><th>Expiry</th><th>ACL</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="users-body"></tbody>
-        </table>
-        <div id="users-empty" class="muted empty hidden">Belum ada user. Klik "User Baru".</div>
-      </section>
+      <div class="sidebar-foot">
+        <div class="agents" id="agent-status"></div>
+        <div class="whoami-row">
+          <span id="whoami" class="muted"></span>
+          <button id="logout-btn" class="ghost small">Keluar</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="page-head">
+        <h1 id="page-title">Pengguna</h1>
+        <div class="page-actions" id="page-actions"></div>
+      </header>
+      <div id="view-root"></div>
     </main>
   </div>
 
