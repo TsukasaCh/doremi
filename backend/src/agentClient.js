@@ -54,6 +54,8 @@ export const openvpnAgent = {
     callAgent(cfg.agents.openvpn, 'openvpn.remove_ccd', { name }),
   listCerts: () =>
     callAgent(cfg.agents.openvpn, 'openvpn.list_certs'),
+  connected: () =>
+    callAgent(cfg.agents.openvpn, 'openvpn.connected'),
 };
 
 export const proxmoxAgent = {

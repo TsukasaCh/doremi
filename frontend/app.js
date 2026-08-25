@@ -28,6 +28,14 @@ function daysLeft(iso) {
   const ms = new Date(iso).getTime() - Date.now();
   return Math.ceil(ms / 86400000);
 }
+function fmtBytes(n) {
+  n = parseInt(n, 10);
+  if (!n || isNaN(n)) return '0 B';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(i ? 1 : 0)} ${u[i]}`;
+}
 
 // ---------- Auth ----------
 async function checkAuth() {
@@ -141,6 +149,7 @@ function refreshAll() {
 // ---------- View router ----------
 const VIEWS = {
   users: { title: 'Pengguna', render: renderUsersView },
+  connected: { title: 'Client Aktif', render: renderConnectedView },
   groups: { title: 'ACL Group', render: renderGroupsView },
   iptables: { title: 'iptables · Proxmox host', render: renderIptablesView },
   audit: { title: 'Audit Log', render: renderAuditView },
@@ -615,6 +624,41 @@ async function renderAuditView() {
             <td>${r.ok ? '' : '⚠️ '}${esc(r.action)}</td><td>${esc(r.target || '')}</td>
             <td class="muted">${esc(r.detail || '')}</td></tr>`).join('')}</tbody>
         </table>
+      </section>`;
+  } catch (err) {
+    $('#view-root').innerHTML = `<section class="card"><div class="error">${esc(err.message)}</div></section>`;
+  }
+}
+
+// ---------- Connected clients view ----------
+async function renderConnectedView() {
+  $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', renderConnectedView));
+  $('#view-root').innerHTML = '<section class="card"><div class="muted">Memuat…</div></section>';
+  try {
+    const r = await api('/agents/connected');
+    const c = r.clients || [];
+    if (r.raw && c.length === 0) { // fallback raw output
+      $('#view-root').innerHTML = `<section class="card">
+        <p class="muted" style="margin-top:0">Sumber: <code>${esc(r.source || '')}</code></p>
+        <pre class="ovpn" style="max-height:none">${esc(r.raw)}</pre></section>`;
+      return;
+    }
+    $('#view-root').innerHTML = `
+      <section class="card">
+        <p class="muted" style="margin-top:0">${c.length} client terhubung${r.source ? ` · <code>${esc(r.source)}</code>` : ''}</p>
+        ${c.length === 0
+          ? '<div class="muted empty">Tidak ada client yang terhubung saat ini.</div>'
+          : `<table>
+              <thead><tr><th>Common Name</th><th>IP VPN</th><th>IP Asal</th><th>↓ Download</th><th>↑ Upload</th><th>Terhubung sejak</th></tr></thead>
+              <tbody>${c.map((x) => `<tr>
+                <td><strong>${esc(x.common_name)}</strong></td>
+                <td><code>${esc(x.virtual_address || '—')}</code></td>
+                <td><code>${esc(x.real_address || '—')}</code></td>
+                <td>${fmtBytes(x.bytes_sent)}</td>
+                <td>${fmtBytes(x.bytes_received)}</td>
+                <td>${esc(x.connected_since || '—')}</td>
+              </tr>`).join('')}</tbody>
+            </table>`}
       </section>`;
   } catch (err) {
     $('#view-root').innerHTML = `<section class="card"><div class="error">${esc(err.message)}</div></section>`;

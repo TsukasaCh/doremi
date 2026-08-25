@@ -20,6 +20,15 @@ router.get('/status', async (req, res) => {
   res.json(out);
 });
 
+// GET /api/agents/connected — clients currently connected to OpenVPN
+router.get('/connected', async (req, res) => {
+  try {
+    res.json(await openvpnAgent.connected());
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 // GET /api/agents/iptables[?full=1] — iptables view from the Proxmox host
 router.get('/iptables', async (req, res) => {
   try {

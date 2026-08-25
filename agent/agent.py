@@ -45,6 +45,10 @@ CONF = {
     #   easyrsa -> call easy-rsa directly
     "openvpn_backend": env("OPENVPN_BACKEND", "easyrsa"),
     "openvpn_install_sh": env("OPENVPN_INSTALL_SH", "/root/openvpn-install.sh"),
+    # For the "connected clients" view: OpenVPN status file (auto-detected from
+    # server.conf if left empty) and the server.conf to inspect.
+    "openvpn_status_file": env("OPENVPN_STATUS_FILE", ""),
+    "openvpn_server_conf": env("OPENVPN_SERVER_CONF", "/etc/openvpn/server/server.conf"),
 
     # --- easy-rsa (used only when OPENVPN_BACKEND=easyrsa) ---
     "easyrsa_dir": env("EASYRSA_DIR", "/etc/openvpn/easy-rsa"),
@@ -299,6 +303,118 @@ def _list_certs_easyrsa(_params):
     return {"certs": out}
 
 
+# ---- connected clients ---------------------------------------------------
+def _status_file():
+    """Locate the OpenVPN status file: explicit config, then the `status`
+    directive in server.conf, then common default locations."""
+    cand = []
+    if CONF["openvpn_status_file"]:
+        cand.append(CONF["openvpn_status_file"])
+    conf = CONF["openvpn_server_conf"]
+    if os.path.exists(conf):
+        for line in read_file(conf).splitlines():
+            m = re.match(r"^\s*status\s+(\S+)", line)
+            if m:
+                p = m.group(1)
+                if not os.path.isabs(p):
+                    p = os.path.join(os.path.dirname(conf), p)
+                cand.append(p)
+    cand += [
+        "/etc/openvpn/server/openvpn-status.log",
+        "/var/log/openvpn/status.log",
+        "/etc/openvpn/openvpn-status.log",
+        "/run/openvpn-server/status-server.log",
+    ]
+    for p in cand:
+        if p and os.path.exists(p):
+            return p
+    return None
+
+
+def _parse_status(text):
+    """Parse an OpenVPN status file (version 1 human format, or 2/3 tagged
+    with HEADER lines) into a list of connected clients."""
+    clients = {}   # common_name -> record
+    routes = {}    # common_name -> [virtual addresses]
+    headers = {}   # record type -> {column name: data index}
+    section = None
+
+    def split_line(l):
+        return l.split("\t") if "\t" in l else l.split(",")
+
+    for line in text.splitlines():
+        f = split_line(line)
+        tag = f[0] if f else ""
+
+        if tag == "HEADER" and len(f) >= 2:
+            headers[f[1]] = {name: idx - 1 for idx, name in enumerate(f) if idx >= 2}
+            continue
+        if tag == "CLIENT_LIST":
+            h = headers.get("CLIENT_LIST", {})
+            g = lambda c: (f[h[c]] if c in h and h[c] < len(f) else "")
+            cn = g("Common Name")
+            if cn:
+                clients[cn] = {
+                    "common_name": cn,
+                    "real_address": g("Real Address"),
+                    "virtual_address": g("Virtual Address"),
+                    "bytes_received": g("Bytes Received"),
+                    "bytes_sent": g("Bytes Sent"),
+                    "connected_since": g("Connected Since"),
+                }
+            continue
+        if tag == "ROUTING_TABLE":
+            h = headers.get("ROUTING_TABLE", {})
+            g = lambda c: (f[h[c]] if c in h and h[c] < len(f) else "")
+            cn, va = g("Common Name"), g("Virtual Address")
+            if cn and va:
+                routes.setdefault(cn, []).append(va)
+            continue
+
+        # ---- version 1 (human) sections ----
+        s = line.strip()
+        if s == "Common Name,Real Address,Bytes Received,Bytes Sent,Connected Since" \
+           or s.startswith("Common Name,Real Address"):
+            section = "clients"; continue
+        if s.startswith("Virtual Address,Common Name"):
+            section = "routes"; continue
+        if s in ("OpenVPN CLIENT LIST", "ROUTING TABLE", "GLOBAL STATS",
+                 "OpenVPN STATISTICS") or s.startswith("Updated,"):
+            section = None; continue
+        if s == "END":
+            break
+        if section == "clients" and "," in line:
+            clients[f[0]] = {
+                "common_name": f[0],
+                "real_address": f[1] if len(f) > 1 else "",
+                "virtual_address": "",
+                "bytes_received": f[2] if len(f) > 2 else "",
+                "bytes_sent": f[3] if len(f) > 3 else "",
+                "connected_since": f[4] if len(f) > 4 else "",
+            }
+        elif section == "routes" and "," in line:
+            va, cn = f[0], (f[1] if len(f) > 1 else "")
+            if cn:
+                routes.setdefault(cn, []).append(va)
+
+    for cn, c in clients.items():
+        if not c["virtual_address"] and cn in routes:
+            c["virtual_address"] = ", ".join(routes[cn])
+    return list(clients.values())
+
+
+def openvpn_connected(_params):
+    path = _status_file()
+    if path:
+        return {"clients": _parse_status(read_file(path)), "source": path}
+    # fallback: openvpn-install server status (raw text)
+    if CONF["openvpn_backend"] == "script" and os.path.exists(CONF["openvpn_install_sh"]):
+        raw = run([_install_sh(), "server", "status"], check=False)
+        return {"clients": [], "raw": raw, "source": "openvpn-install server status"}
+    raise RpcError("OpenVPN status file not found. Set OPENVPN_STATUS_FILE in "
+                   "/etc/openvpn-agent.env, or enable `status` in server.conf.")
+
+
 # ================================================================ iptables
 def _chain_for(ip):
     # iptables chain names must be <=29 chars; encode the IP
@@ -467,6 +583,7 @@ METHODS_OPENVPN = {
     "openvpn.set_ccd": openvpn_set_ccd,
     "openvpn.remove_ccd": openvpn_remove_ccd,
     "openvpn.list_certs": openvpn_list_certs,
+    "openvpn.connected": openvpn_connected,
 }
 METHODS_IPTABLES = {
     "iptables.apply_acl": iptables_apply_acl,
