@@ -190,6 +190,10 @@ pre.ovpn { background: #0a0e13; border: 1px solid var(--border); border-radius: 
 .chip-x:hover { background: #2a1a1e; }
 .modal h3 { color: var(--text); }
 
+/* account settings labels */
+.modal-lbl { display: block; margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+.modal-lbl input { display: block; width: 100%; max-width: 340px; margin-top: 5px; }
+
 /* key-value list (agent detail modal) */
 .kv-list { display: flex; flex-direction: column; gap: 2px; }
 .kv { display: flex; gap: 12px; padding: 8px 2px; border-bottom: 1px solid var(--border); }

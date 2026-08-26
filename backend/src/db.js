@@ -85,16 +85,23 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   username   TEXT UNIQUE NOT NULL,
   pass_hash  TEXT NOT NULL,
-  role       TEXT NOT NULL DEFAULT 'operator',  -- admin | operator | viewer
-  disabled   INTEGER NOT NULL DEFAULT 0,
-  is_owner   INTEGER NOT NULL DEFAULT 0,         -- protected superadmin (only one)
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  role         TEXT NOT NULL DEFAULT 'operator',  -- admin | operator | viewer
+  disabled     INTEGER NOT NULL DEFAULT 0,
+  is_owner     INTEGER NOT NULL DEFAULT 0,         -- protected superadmin (only one)
+  totp_secret  TEXT,
+  totp_enabled INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `);
 
-// Migration for DBs created before the is_owner column existed.
-try { db.exec('ALTER TABLE dashboard_users ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0'); }
-catch { /* column already exists */ }
+// Migrations for DBs created before these columns existed.
+for (const stmt of [
+  'ALTER TABLE dashboard_users ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE dashboard_users ADD COLUMN totp_secret TEXT',
+  'ALTER TABLE dashboard_users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0',
+]) {
+  try { db.exec(stmt); } catch { /* column already exists */ }
+}
 
 // Seed the first admin from env on a fresh DB (marked as the owner).
 const haveUsers = db.prepare('SELECT COUNT(*) AS n FROM dashboard_users').get().n;

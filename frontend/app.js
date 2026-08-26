@@ -73,6 +73,8 @@ async function showLogin() {
 function revealRealLogin() {
   $('#decoy-view').classList.add('hidden');
   $('#login-view').classList.remove('hidden');
+  $('#login-2fa-row').classList.add('hidden');
+  $('#login-code').value = '';
   $('#login-user').focus();
 }
 function showApp() {
@@ -104,11 +106,19 @@ $('#decoy-form').addEventListener('submit', async (e) => {
 $('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   $('#login-error').textContent = '';
+  const body = {
+    user: $('#login-user').value,
+    password: $('#login-pass').value,
+    code: $('#login-code').value || undefined,
+  };
   try {
-    await api('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ user: $('#login-user').value, password: $('#login-pass').value }),
-    });
+    const r = await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
+    if (r.twofa) { // password ok, second factor required
+      $('#login-2fa-row').classList.remove('hidden');
+      $('#login-code').focus();
+      $('#login-error').textContent = 'Masukkan kode 2FA dari authenticator Anda.';
+      return;
+    }
     checkAuth();
   } catch (err) {
     $('#login-error').textContent = err.message;
@@ -200,7 +210,8 @@ const VIEWS = {
   forwards: { title: 'Port Forward', render: renderForwardsView },
   iptables: { title: 'iptables · Proxmox host', render: renderIptablesView },
   audit: { title: 'Audit Log', render: renderAuditView },
-  admins: { title: 'Pengaturan · Akses (IAM)', render: renderAdminsView },
+  account: { title: 'Pengaturan Akun', render: renderAccountView },
+  admins: { title: 'IAM · Akses', render: renderAdminsView },
 };
 let CURRENT_VIEW = 'users';
 function showView(name) {
@@ -803,7 +814,88 @@ async function delForward(f) {
   } catch (err) { toast(err.message, 'err'); }
 }
 
-// ---------- IAM (Pengaturan) view ----------
+// ---------- Account settings (Pengaturan) view ----------
+async function renderAccountView() {
+  $('#view-root').innerHTML = '<section class="card"><div class="muted">Memuat…</div></section>';
+  let me;
+  try { me = await api('/auth/me'); } catch (e) { $('#view-root').innerHTML = `<section class="card"><div class="error">${esc(e.message)}</div></section>`; return; }
+
+  $('#view-root').innerHTML = `
+    <section class="card" style="max-width:560px">
+      <h3 style="margin:0 0 4px;font-size:15px">Akun: ${esc(me.user)}</h3>
+      <p class="muted" style="margin:0 0 16px">Role: ${esc(ROLE_LABEL[me.role] || me.role)}</p>
+
+      <h3 style="font-size:14px;margin:0 0 8px">Ganti Password</h3>
+      <label class="modal-lbl">Password saat ini<input id="pw-cur" type="password" /></label>
+      <label class="modal-lbl">Password baru<input id="pw-new" type="password" placeholder="min. 6 karakter" /></label>
+      <label class="modal-lbl">Ulangi password baru<input id="pw-new2" type="password" /></label>
+      <div style="margin-top:12px"><button class="primary" id="pw-save">Simpan Password</button></div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:24px 0" />
+
+      <h3 style="font-size:14px;margin:0 0 8px">Autentikasi Dua Faktor (2FA)</h3>
+      <div id="twofa-box"></div>
+    </section>`;
+
+  $('#pw-save').addEventListener('click', changeOwnPassword);
+  renderTwofaBox(me.twofa);
+}
+
+async function changeOwnPassword() {
+  const current = $('#pw-cur').value, next = $('#pw-new').value, next2 = $('#pw-new2').value;
+  if (next !== next2) return toast('Password baru tidak sama', 'err');
+  try {
+    await api('/auth/password', { method: 'POST', body: JSON.stringify({ current, next }) });
+    toast('Password berhasil diganti');
+    $('#pw-cur').value = $('#pw-new').value = $('#pw-new2').value = '';
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+function renderTwofaBox(enabled) {
+  const box = $('#twofa-box');
+  if (enabled) {
+    box.innerHTML = `
+      <p><span class="badge active">Aktif</span> Login memerlukan kode dari aplikasi authenticator.</p>
+      <label class="modal-lbl">Kode 6-digit untuk menonaktifkan<input id="tf-off-code" inputmode="numeric" placeholder="123456" style="max-width:160px" /></label>
+      <div style="margin-top:12px"><button class="danger" id="tf-disable">Nonaktifkan 2FA</button></div>`;
+    $('#tf-disable').addEventListener('click', async () => {
+      try {
+        await api('/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ code: $('#tf-off-code').value }) });
+        toast('2FA dinonaktifkan');
+        renderTwofaBox(false);
+      } catch (err) { toast(err.message, 'err'); }
+    });
+  } else {
+    box.innerHTML = `
+      <p class="muted" style="margin-top:0">Tambah lapisan keamanan: butuh kode dari Google Authenticator/Authy saat login.</p>
+      <button class="primary" id="tf-start">Aktifkan 2FA</button>
+      <div id="tf-enroll"></div>`;
+    $('#tf-start').addEventListener('click', startTwofaEnroll);
+  }
+}
+
+async function startTwofaEnroll() {
+  try {
+    const r = await api('/auth/2fa/setup', { method: 'POST' });
+    $('#tf-enroll').innerHTML = `
+      <div class="card nested" style="margin-top:14px">
+        <p class="muted" style="margin-top:0">Masukkan kunci ini ke aplikasi authenticator (manual entry), lalu ketik kode 6-digit yang muncul.</p>
+        <div class="kv"><span class="kv-k">Kunci (Base32)</span><span class="kv-v"><code>${esc(r.secret)}</code></span></div>
+        <div class="kv"><span class="kv-k">otpauth URI</span><span class="kv-v"><code style="font-size:11px">${esc(r.uri)}</code></span></div>
+        <label class="modal-lbl" style="margin-top:10px">Kode dari authenticator<input id="tf-code" inputmode="numeric" placeholder="123456" style="max-width:160px" /></label>
+        <div style="margin-top:12px"><button class="primary" id="tf-verify">Verifikasi & Aktifkan</button></div>
+      </div>`;
+    $('#tf-verify').addEventListener('click', async () => {
+      try {
+        await api('/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ secret: r.secret, code: $('#tf-code').value }) });
+        toast('2FA aktif! Lain kali login butuh kode.');
+        renderTwofaBox(true);
+      } catch (err) { toast(err.message, 'err'); }
+    });
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+// ---------- IAM view ----------
 async function renderAdminsView() {
   $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', renderAdminsView));
   $('#view-root').innerHTML = '<section class="card"><div class="muted">Memuat…</div></section>';
