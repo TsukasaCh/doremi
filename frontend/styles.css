@@ -237,6 +237,31 @@ pre.ovpn { background: #0a0e13; border: 1px solid var(--border); border-radius: 
 .ipt-target.t-drop { background: #3a1e22; color: var(--red); }
 .ipt-target.t-nat { background: #1e2f3a; color: #38bdf8; }
 
+/* Dashboard stats */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+.stat-num { font-size: 30px; font-weight: 700; line-height: 1; }
+.stat-num.t-green { color: var(--green); }
+.stat-num.t-blue { color: #38bdf8; }
+.stat-num.t-amber { color: var(--amber); }
+.stat-num.t-red { color: var(--red); }
+.stat-lbl { margin-top: 8px; color: var(--muted); font-size: 13px; }
+.agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.agent-card { padding: 16px 18px; }
+.ac-top { display: flex; align-items: center; gap: 8px; }
+
+/* Users table toolbar / bulk / online / expiry */
+.table-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.search { flex: 1; max-width: 320px; }
+.bulk-bar { display: flex; align-items: center; gap: 8px; }
+.chk-col { width: 34px; text-align: center; }
+.chk-col input { cursor: pointer; }
+.odot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--border); margin-right: 8px; vertical-align: middle; }
+.odot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(34,197,94,.18); }
+.expiry-soon { color: var(--amber); }
+.expiry-over { color: var(--red); }
+tr.row-soon td { background: rgba(245,158,11,.06); }
+
 /* Toast */
 .toast { position: fixed; bottom: 24px; right: 24px; background: var(--panel-2); border: 1px solid var(--border); padding: 12px 18px; border-radius: 10px; z-index: 100; max-width: 400px; }
 .toast.ok { border-color: var(--green); }

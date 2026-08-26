@@ -83,7 +83,7 @@ function showApp() {
   $('#app-view').classList.remove('hidden');
   // Pengaturan (IAM) only for admins
   $('#nav-admins').classList.toggle('hidden', CURRENT.role !== 'admin');
-  showView('users');
+  showView('dashboard');
   refreshAll();
 }
 
@@ -138,6 +138,21 @@ async function loadUsers() {
 }
 async function loadGroups() {
   GROUPS = await api('/groups');
+}
+let CONNECTED = { ips: new Set(), names: new Set(), count: 0 };
+async function loadConnected() {
+  try {
+    const r = await api('/agents/connected');
+    const c = r.clients || [];
+    CONNECTED = {
+      ips: new Set(c.flatMap((x) => (x.virtual_address || '').split(',').map((s) => s.trim()).filter(Boolean))),
+      names: new Set(c.map((x) => x.common_name)),
+      count: c.length,
+    };
+  } catch { CONNECTED = { ips: new Set(), names: new Set(), count: 0 }; }
+}
+function isOnline(u) {
+  return CONNECTED.ips.has(u.static_ip) || CONNECTED.names.has(u.name);
 }
 let AGENT_STATUS = {};
 async function loadAgentStatus() {
@@ -197,13 +212,14 @@ function openAgentModal(name) {
   });
 }
 function refreshAll() {
-  loadUsers().catch((e) => toast(e.message, 'err'));
+  loadConnected().then(() => loadUsers()).catch((e) => toast(e.message, 'err'));
   loadGroups().catch(() => {});
   loadAgentStatus();
 }
 
 // ---------- View router ----------
 const VIEWS = {
+  dashboard: { title: 'Dashboard', render: renderDashboardView },
   users: { title: 'Pengguna', render: renderUsersView },
   connected: { title: 'Client Aktif', render: renderConnectedView },
   groups: { title: 'ACL Group', render: renderGroupsView },
@@ -226,55 +242,160 @@ function showView(name) {
 document.querySelectorAll('.nav-item').forEach((b) =>
   b.addEventListener('click', () => showView(b.dataset.view)));
 
+// ---------- Dashboard view ----------
+async function renderDashboardView() {
+  $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', () => { refreshAll(); renderDashboardView(); }));
+  $('#view-root').innerHTML = '<section class="card"><div class="muted">Memuat…</div></section>';
+  const [users, status, conn, groups, forwards] = await Promise.all([
+    api('/users').catch(() => []),
+    api('/agents/status').catch(() => ({})),
+    api('/agents/connected').catch(() => ({ clients: [] })),
+    api('/groups').catch(() => []),
+    api('/forwards').catch(() => []),
+  ]);
+  const active = users.filter((u) => u.status === 'active').length;
+  const expired = users.filter((u) => u.status === 'expired').length;
+  const online = (conn.clients || []).length;
+  const soon = users.filter((u) => { const d = daysLeft(u.expires_at); return u.status === 'active' && d !== null && d >= 0 && d <= 7; }).length;
+
+  const stat = (label, value, cls = '') =>
+    `<div class="stat"><div class="stat-num ${cls}">${value}</div><div class="stat-lbl">${label}</div></div>`;
+  const agentCard = (name, i) => `
+    <div class="card agent-card">
+      <div class="ac-top"><span class="dot ${i.online ? 'on' : 'off'}"></span><strong>${esc(name)}</strong>
+        <span class="badge ${i.online ? 'active' : 'revoked'}" style="margin-left:auto">${i.online ? 'online' : 'offline'}</span></div>
+      <div class="muted" style="font-size:12px;margin-top:8px">${i.online ? `${esc(i.host || '')} · uptime ${fmtUptime(i.uptime_seconds)}` : esc(i.error || '')}</div>
+    </div>`;
+
+  $('#view-root').innerHTML = `
+    <div class="stat-grid">
+      ${stat('Total user', users.length)}
+      ${stat('Aktif', active, 't-green')}
+      ${stat('Online sekarang', online, 't-blue')}
+      ${stat('Mendekati expiry', soon, soon ? 't-amber' : '')}
+      ${stat('Expired', expired, expired ? 't-red' : '')}
+      ${stat('ACL Group', groups.length)}
+      ${stat('Port Forward', forwards.length)}
+    </div>
+    <h3 class="sc-h" style="margin:22px 0 12px">Status Agent</h3>
+    <div class="agent-grid">
+      ${Object.entries(status).map(([n, i]) => agentCard(n, i)).join('') || '<div class="muted">Tidak ada data agent.</div>'}
+    </div>`;
+}
+
 // ---------- Users view ----------
+let USER_FILTER = '';
+let SELECTED = new Set();
+
+function filteredUsers() {
+  const q = USER_FILTER.trim().toLowerCase();
+  if (!q) return USERS;
+  return USERS.filter((u) => u.name.toLowerCase().includes(q) || (u.static_ip || '').includes(q));
+}
+
 function renderUsersView() {
   if (canWrite()) $('#page-actions').append(mkBtn('+ User Baru', 'primary', openCreateUser));
   $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', refreshAll));
+  SELECTED = new Set();
   $('#view-root').innerHTML = `
     <section class="card">
+      <div class="table-toolbar">
+        <input id="user-search" class="search" placeholder="🔍 Cari nama atau IP…" value="${esc(USER_FILTER)}" />
+        <div id="bulk-bar" class="bulk-bar hidden"></div>
+      </div>
       <table id="users-table">
         <thead><tr>
+          ${canWrite() ? '<th class="chk-col"><input type="checkbox" id="chk-all" title="Pilih semua" /></th>' : ''}
           <th>Nama</th><th>IP Statik</th><th>Status</th>
           <th>Dibuat</th><th>Expiry</th><th>ACL</th><th></th>
         </tr></thead>
         <tbody id="users-body"></tbody>
       </table>
-      <div id="users-empty" class="muted empty hidden">Belum ada user. Klik "+ User Baru".</div>
+      <div id="users-empty" class="muted empty hidden">Tidak ada user.</div>
     </section>`;
+  const search = $('#user-search');
+  search.addEventListener('input', () => { USER_FILTER = search.value; renderUsers(); });
+  if (canWrite()) $('#chk-all').addEventListener('change', (e) => {
+    if (e.target.checked) filteredUsers().forEach((u) => SELECTED.add(u.id));
+    else SELECTED.clear();
+    renderUsers();
+  });
   renderUsers();
+}
+
+function updateBulkBar() {
+  const bar = $('#bulk-bar');
+  if (!bar) return;
+  if (!canWrite() || SELECTED.size === 0) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+  bar.classList.remove('hidden');
+  bar.innerHTML = `<span class="muted" style="font-size:13px">${SELECTED.size} terpilih</span>`;
+  bar.append(mkBtn('Perpanjang', 'small ghost', bulkExtend), mkBtn('Hapus', 'small danger', bulkDelete));
 }
 
 function renderUsers() {
   const body = $('#users-body');
   if (!body) return; // not on the users view right now
+  const list = filteredUsers();
   body.innerHTML = '';
-  $('#users-empty').classList.toggle('hidden', USERS.length > 0);
+  $('#users-empty').classList.toggle('hidden', list.length > 0);
 
-  for (const u of USERS) {
+  for (const u of list) {
     const tr = document.createElement('tr');
     const dl = daysLeft(u.expires_at);
+    const soon = dl !== null && dl >= 0 && dl <= 7 && u.status === 'active';
+    const over = dl !== null && dl < 0;
+    if (soon) tr.classList.add('row-soon');
+    const online = isOnline(u);
+    const expCls = soon ? 'expiry-soon' : over ? 'expiry-over' : 'muted';
     const expiryTxt = u.expires_at
-      ? `${fmtDate(u.expires_at)}${dl !== null ? ` <span class="muted">(${dl > 0 ? dl + 'h lagi' : 'lewat'})</span>` : ''}`
+      ? `${fmtDate(u.expires_at)} <span class="${expCls}">(${dl > 0 ? dl + 'h lagi' : 'lewat'})</span>`
       : '<span class="muted">Tidak ada</span>';
 
     tr.innerHTML = `
-      <td><strong>${esc(u.name)}</strong></td>
+      ${canWrite() ? `<td class="chk-col"><input type="checkbox" class="row-chk" ${SELECTED.has(u.id) ? 'checked' : ''} /></td>` : ''}
+      <td><span class="odot ${online ? 'on' : ''}" title="${online ? 'Online' : 'Offline'}"></span><strong>${esc(u.name)}</strong></td>
       <td><code>${u.static_ip || '—'}</code></td>
       <td><span class="badge ${u.status}">${u.status}</span></td>
       <td>${fmtDate(u.created_at)}</td>
       <td>${expiryTxt}</td>
       <td>${u.acl.length} rule${u.acl.length !== 1 ? 's' : ''}${(u.groups && u.groups.length) ? ` <span class="muted">+${u.groups.length} grp</span>` : ''}</td>
       <td class="actions"></td>`;
-    const actions = tr.querySelector('.actions');
 
+    if (canWrite()) {
+      const chk = tr.querySelector('.row-chk');
+      chk.addEventListener('change', () => { chk.checked ? SELECTED.add(u.id) : SELECTED.delete(u.id); updateBulkBar(); });
+    }
+    const actions = tr.querySelector('.actions');
     actions.append(mkBtn('ACL', 'small', () => openAclModal(u)));
     if (canWrite()) actions.append(mkBtn('Perpanjang', 'small ghost', () => openRenewModal(u)));
-    if (u.has_ovpn) {
-      actions.append(mkIconBtn(DOWNLOAD_SVG, 'small icon-btn', 'Unduh .ovpn', () => downloadUserOvpn(u)));
-    }
+    if (u.has_ovpn) actions.append(mkIconBtn(DOWNLOAD_SVG, 'small icon-btn', 'Unduh .ovpn', () => downloadUserOvpn(u)));
     if (canWrite()) actions.append(mkBtn('Hapus', 'small danger', () => deleteUser(u)));
     body.appendChild(tr);
   }
+  updateBulkBar();
+}
+
+async function bulkExtend() {
+  const days = prompt('Perpanjang user terpilih untuk berapa hari? (kosong = permanen)');
+  if (days === null) return;
+  const ids = [...SELECTED];
+  let ok = 0, fail = 0;
+  for (const id of ids) {
+    try { await api(`/users/${id}`, { method: 'PATCH', body: JSON.stringify({ expiryDays: days === '' ? null : parseInt(days, 10) }) }); ok++; }
+    catch { fail++; }
+  }
+  toast(`Perpanjang: ${ok} sukses${fail ? `, ${fail} gagal` : ''}`, fail ? 'err' : 'ok');
+  SELECTED.clear(); loadUsers();
+}
+async function bulkDelete() {
+  const ids = [...SELECTED];
+  if (!confirm(`Hapus & revoke ${ids.length} user terpilih? Sertifikat dicabut & ACL dihapus.`)) return;
+  let ok = 0, fail = 0;
+  for (const id of ids) {
+    try { await api(`/users/${id}`, { method: 'DELETE' }); ok++; } catch { fail++; }
+  }
+  toast(`Hapus: ${ok} sukses${fail ? `, ${fail} gagal` : ''}`, fail ? 'err' : 'ok');
+  SELECTED.clear(); loadUsers();
 }
 function mkBtn(text, cls, onclick) {
   const b = document.createElement('button');
@@ -968,7 +1089,7 @@ async function renderAdminsView() {
                 ${['admin', 'operator', 'viewer'].map((r) => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}
               </select>
             </td>
-            <td><span class="badge ${u.disabled ? 'revoked' : 'active'}">${u.disabled ? 'nonaktif' : 'aktif'}</span></td>
+            <td><span class="badge ${u.disabled ? 'revoked' : 'active'}">${u.disabled ? 'nonaktif' : 'aktif'}</span>${u.twofa ? ' <span class="badge" title="2FA aktif">2FA</span>' : ''}</td>
             <td>${fmtDate(u.created_at)}</td>
             <td class="actions"></td>
           </tr>`).join('')}</tbody>
@@ -985,6 +1106,7 @@ async function renderAdminsView() {
       // Owner can only be managed by the owner themselves.
       const canManage = !u.is_owner || isSelf;
       if (canManage) cell.append(mkBtn('Reset PW', 'small ghost', () => resetAdminPw(u)));
+      if (canManage && u.twofa) cell.append(mkBtn('Reset 2FA', 'small ghost', () => resetAdmin2fa(u)));
       if (!isSelf && !u.is_owner) {
         cell.append(mkBtn(u.disabled ? 'Aktifkan' : 'Nonaktifkan', 'small ghost', () => updateAdmin(u.id, { disabled: !u.disabled }).then(renderAdminsView)));
         cell.append(mkBtn('Hapus', 'small danger', () => deleteAdmin(u)));
@@ -1014,6 +1136,14 @@ async function resetAdminPw(u) {
   try {
     await api(`/admins/${u.id}`, { method: 'PATCH', body: JSON.stringify({ password: pw }) });
     toast('Password direset');
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function resetAdmin2fa(u) {
+  if (!confirm(`Reset 2FA untuk "${u.username}"? User bisa login hanya dengan password, lalu setup 2FA baru.`)) return;
+  try {
+    await api(`/admins/${u.id}/2fa/reset`, { method: 'POST' });
+    toast('2FA direset');
+    renderAdminsView();
   } catch (err) { toast(err.message, 'err'); }
 }
 async function deleteAdmin(u) {

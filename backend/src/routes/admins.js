@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db, { audit } from '../db.js';
 import { hashPassword } from '../password.js';
+import * as backup from '../backupcodes.js';
 
 const router = Router();
 
@@ -8,7 +9,7 @@ const ROLES = new Set(['admin', 'operator', 'viewer']);
 const NAME_RE = /^[a-zA-Z0-9_.-]{2,32}$/;
 
 function serialize(u) {
-  return { id: u.id, username: u.username, role: u.role, disabled: !!u.disabled, is_owner: !!u.is_owner, created_at: u.created_at };
+  return { id: u.id, username: u.username, role: u.role, disabled: !!u.disabled, is_owner: !!u.is_owner, twofa: !!u.totp_enabled, created_at: u.created_at };
 }
 function adminCount() {
   return db.prepare("SELECT COUNT(*) AS n FROM dashboard_users WHERE role = 'admin' AND disabled = 0").get().n;
@@ -70,6 +71,18 @@ router.patch('/:id', (req, res) => {
   audit(req.user, 'iam_update', u.username,
     [role && `role=${role}`, password !== undefined && 'password reset', disabled !== undefined && `disabled=${!!disabled}`].filter(Boolean).join(', '));
   res.json(serialize(db.prepare('SELECT * FROM dashboard_users WHERE id = ?').get(u.id)));
+});
+
+// POST /api/admins/:id/2fa/reset — clear a user's 2FA (recovery)
+router.post('/:id/2fa/reset', (req, res) => {
+  const u = db.prepare('SELECT * FROM dashboard_users WHERE id = ?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: 'Not found' });
+  if (u.is_owner && req.userId !== u.id)
+    return res.status(403).json({ error: 'Akun owner hanya bisa direset oleh dirinya sendiri' });
+  db.prepare('UPDATE dashboard_users SET totp_secret = NULL, totp_enabled = 0 WHERE id = ?').run(u.id);
+  backup.clear(u.id);
+  audit(req.user, 'iam_2fa_reset', u.username);
+  res.json({ ok: true });
 });
 
 // DELETE /api/admins/:id
