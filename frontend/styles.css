@@ -262,6 +262,24 @@ pre.ovpn { background: #0a0e13; border: 1px solid var(--border); border-radius: 
 .expiry-over { color: var(--red); }
 tr.row-soon td { background: rgba(245,158,11,.06); }
 
+/* Bandwidth chart */
+.bw-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.bw-legend { display: flex; gap: 18px; font-size: 13px; }
+.bw-legend span { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+.bw-legend strong { color: var(--text); }
+.bw-legend i, .bw-tip i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex-shrink: 0; }
+.bw-plot { position: relative; width: 100%; }
+.bw-svg { width: 100%; height: 260px; display: block; }
+.bw-grid { stroke: var(--border); stroke-width: 1; }
+.bw-ytick { fill: var(--muted); font-size: 10px; text-anchor: end; }
+.bw-xtick { fill: var(--muted); font-size: 10px; }
+.bw-cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+#bw-hit { cursor: crosshair; }
+.bw-tip { position: absolute; top: 8px; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 12px; pointer-events: none; white-space: nowrap; z-index: 5; }
+.bw-tip.flip { transform: translateX(-100%); }
+.bw-tip-t { color: var(--muted); margin-bottom: 3px; }
+.bw-tip div { display: flex; align-items: center; gap: 6px; }
+
 /* Toast */
 .toast { position: fixed; bottom: 24px; right: 24px; background: var(--panel-2); border: 1px solid var(--border); padding: 12px 18px; border-radius: 10px; z-index: 100; max-width: 400px; }
 .toast.ok { border-color: var(--green); }

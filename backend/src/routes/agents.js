@@ -39,6 +39,12 @@ router.get('/iptables', async (req, res) => {
   }
 });
 
+// GET /api/agents/bandwidth — host throughput samples (bps) for the chart
+router.get('/bandwidth', (req, res) => {
+  const rows = db.prepare('SELECT ts, rx_bps, tx_bps FROM bandwidth_samples ORDER BY ts ASC').all();
+  res.json({ agent: cfg.bandwidth.agent, samples: rows });
+});
+
 // GET /api/audit — recent audit log
 router.get('/audit', (req, res) => {
   const rows = db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT 200').all();

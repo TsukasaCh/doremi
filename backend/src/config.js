@@ -29,6 +29,13 @@ const cfg = {
   },
 
   expiryCheckIntervalMin: parseInt(process.env.EXPIRY_CHECK_INTERVAL_MIN || '15', 10),
+
+  bandwidth: {
+    agent: process.env.BANDWIDTH_AGENT || 'proxmox', // which agent's host to measure
+    iface: process.env.BANDWIDTH_IFACE || '',        // '' = default-route interface
+    sampleSec: parseInt(process.env.BANDWIDTH_SAMPLE_SEC || '20', 10),
+    retainHours: parseInt(process.env.BANDWIDTH_RETAIN_HOURS || '6', 10),
+  },
 };
 
 export default cfg;

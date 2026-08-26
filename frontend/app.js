@@ -242,7 +242,107 @@ function showView(name) {
 document.querySelectorAll('.nav-item').forEach((b) =>
   b.addEventListener('click', () => showView(b.dataset.view)));
 
+// ---------- Bandwidth chart ----------
+const BW_DL = '#3987e5';   // download (rx) — validated categorical slot 1
+const BW_UL = '#d95926';   // upload (tx)   — validated categorical slot 2
+
+function fmtRate(bps) {
+  if (bps >= 1e6) return `${(bps / 1e6).toFixed(1)} Mbps`;
+  if (bps >= 1e3) return `${(bps / 1e3).toFixed(0)} Kbps`;
+  return `${Math.round(bps)} bps`;
+}
+function niceCeil(v) {
+  if (v <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / pow;
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return step * pow;
+}
+
+function renderBandwidthChart(samples, mount) {
+  if (!mount) return;
+  if (!samples || samples.length < 2) {
+    mount.innerHTML = '<div class="muted" style="padding:24px 0">Mengumpulkan data throughput… (butuh beberapa sampel, ~20–40 detik)</div>';
+    return;
+  }
+  const W = 860, H = 260, pad = { l: 58, r: 14, t: 14, b: 28 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+  const n = samples.length;
+  const maxBps = Math.max(1, ...samples.map((s) => Math.max(s.rx_bps, s.tx_bps)));
+  const unit = maxBps >= 1e6 ? 'Mbps' : maxBps >= 1e3 ? 'Kbps' : 'bps';
+  const div = unit === 'Mbps' ? 1e6 : unit === 'Kbps' ? 1e3 : 1;
+  const yMax = niceCeil(maxBps / div);
+  const rx = samples.map((s) => s.rx_bps / div);
+  const tx = samples.map((s) => s.tx_bps / div);
+  const X = (i) => pad.l + (n <= 1 ? 0 : (i / (n - 1)) * iw);
+  const Y = (v) => pad.t + ih - (Math.min(v, yMax) / yMax) * ih;
+  const line = (a) => a.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
+  const area = (a) => `${line(a)} L${X(n - 1).toFixed(1)} ${Y(0).toFixed(1)} L${X(0).toFixed(1)} ${Y(0).toFixed(1)} Z`;
+
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+    const v = yMax * f, y = Y(v);
+    return `<line x1="${pad.l}" y1="${y.toFixed(1)}" x2="${W - pad.r}" y2="${y.toFixed(1)}" class="bw-grid"/>
+      <text x="${pad.l - 8}" y="${(y + 3.5).toFixed(1)}" class="bw-ytick">${(+v.toFixed(v < 10 ? 1 : 0))}</text>`;
+  }).join('');
+
+  const tFmt = (ts) => new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  const xticks = [0, Math.floor((n - 1) / 2), n - 1].map((i) =>
+    `<text x="${X(i).toFixed(1)}" y="${H - 8}" class="bw-xtick" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}">${tFmt(samples[i].ts)}</text>`).join('');
+
+  const curRx = samples[n - 1].rx_bps, curTx = samples[n - 1].tx_bps;
+
+  mount.innerHTML = `
+    <div class="bw-head">
+      <div class="bw-legend">
+        <span><i style="background:${BW_DL}"></i>Download <strong>${fmtRate(curRx)}</strong></span>
+        <span><i style="background:${BW_UL}"></i>Upload <strong>${fmtRate(curTx)}</strong></span>
+      </div>
+      <span class="muted" style="font-size:12px">satuan: ${unit}</span>
+    </div>
+    <div class="bw-plot">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="bw-svg">
+        ${grid}${xticks}
+        <path d="${area(rx)}" fill="${BW_DL}" fill-opacity="0.12"/>
+        <path d="${area(tx)}" fill="${BW_UL}" fill-opacity="0.12"/>
+        <path d="${line(rx)}" fill="none" stroke="${BW_DL}" stroke-width="2"/>
+        <path d="${line(tx)}" fill="none" stroke="${BW_UL}" stroke-width="2"/>
+        <line id="bw-cross" class="bw-cross hidden" y1="${pad.t}" y2="${pad.t + ih}"/>
+        <circle id="bw-d-dl" class="bw-dot hidden" r="3.5" fill="${BW_DL}"/>
+        <circle id="bw-d-ul" class="bw-dot hidden" r="3.5" fill="${BW_UL}"/>
+        <rect id="bw-hit" x="${pad.l}" y="${pad.t}" width="${iw}" height="${ih}" fill="transparent"/>
+      </svg>
+      <div id="bw-tip" class="bw-tip hidden"></div>
+    </div>`;
+
+  // hover crosshair + tooltip
+  const svg = mount.querySelector('.bw-svg');
+  const hit = mount.querySelector('#bw-hit');
+  const cross = mount.querySelector('#bw-cross');
+  const dDl = mount.querySelector('#bw-d-dl');
+  const dUl = mount.querySelector('#bw-d-ul');
+  const tip = mount.querySelector('#bw-tip');
+  const show = (on) => [cross, dDl, dUl, tip].forEach((el) => el.classList.toggle('hidden', !on));
+  hit.addEventListener('mouseleave', () => show(false));
+  hit.addEventListener('mousemove', (e) => {
+    const r = svg.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width * W; // to viewBox units
+    let i = Math.round((px - pad.l) / iw * (n - 1));
+    i = Math.max(0, Math.min(n - 1, i));
+    show(true);
+    cross.setAttribute('x1', X(i)); cross.setAttribute('x2', X(i));
+    dDl.setAttribute('cx', X(i)); dDl.setAttribute('cy', Y(rx[i]));
+    dUl.setAttribute('cx', X(i)); dUl.setAttribute('cy', Y(tx[i]));
+    tip.innerHTML = `<div class="bw-tip-t">${tFmt(samples[i].ts)}</div>
+      <div><i style="background:${BW_DL}"></i>DL ${fmtRate(samples[i].rx_bps)}</div>
+      <div><i style="background:${BW_UL}"></i>UL ${fmtRate(samples[i].tx_bps)}</div>`;
+    const leftPct = (X(i) / W) * 100;
+    tip.style.left = `${leftPct}%`;
+    tip.classList.toggle('flip', leftPct > 65);
+  });
+}
+
 // ---------- Dashboard view ----------
+let BW_TIMER = null;
 async function renderDashboardView() {
   $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', () => { refreshAll(); renderDashboardView(); }));
   $('#view-root').innerHTML = '<section class="card"><div class="muted">Memuat…</div></section>';
@@ -277,10 +377,29 @@ async function renderDashboardView() {
       ${stat('ACL Group', groups.length)}
       ${stat('Port Forward', forwards.length)}
     </div>
+    <section class="card" style="margin-top:16px">
+      <h3 class="sc-h" style="margin:0 0 6px">📈 Bandwidth Host <span class="muted" style="font-weight:400">(total interface, bukan hanya user VPN)</span></h3>
+      <div id="bw-chart"></div>
+    </section>
     <h3 class="sc-h" style="margin:22px 0 12px">Status Agent</h3>
     <div class="agent-grid">
       ${Object.entries(status).map(([n, i]) => agentCard(n, i)).join('') || '<div class="muted">Tidak ada data agent.</div>'}
     </div>`;
+
+  loadBandwidth();
+  clearInterval(BW_TIMER);
+  BW_TIMER = setInterval(() => { if (CURRENT_VIEW === 'dashboard') loadBandwidth(); else clearInterval(BW_TIMER); }, 20000);
+}
+
+async function loadBandwidth() {
+  const mount = $('#bw-chart');
+  if (!mount) return;
+  try {
+    const r = await api('/agents/bandwidth');
+    renderBandwidthChart(r.samples || [], mount);
+  } catch (err) {
+    mount.innerHTML = `<div class="error" style="margin:0">${esc(err.message)}</div>`;
+  }
 }
 
 // ---------- Users view ----------

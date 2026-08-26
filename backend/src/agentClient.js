@@ -40,6 +40,7 @@ async function callAgent(agent, method, params = {}) {
 
 export const openvpnAgent = {
   ping: () => callAgent(cfg.agents.openvpn, 'ping'),
+  netStats: () => callAgent(cfg.agents.openvpn, 'net.stats'),
   createUser: (name, expiryDays) =>
     callAgent(cfg.agents.openvpn, 'openvpn.create_user', { name, expiry_days: expiryDays }),
   revokeUser: (name) =>
@@ -60,6 +61,7 @@ export const openvpnAgent = {
 
 export const proxmoxAgent = {
   ping: () => callAgent(cfg.agents.proxmox, 'ping'),
+  netStats: () => callAgent(cfg.agents.proxmox, 'net.stats'),
   // rules: [{ action, dst, proto, port }]
   applyAcl: (vpnIp, rules) =>
     callAgent(cfg.agents.proxmox, 'iptables.apply_acl', { vpn_ip: vpnIp, rules }),

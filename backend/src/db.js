@@ -111,6 +111,13 @@ CREATE TABLE IF NOT EXISTS backup_codes (
   code_hash TEXT NOT NULL,
   used_at  TEXT
 );
+
+-- Host bandwidth throughput samples (bits per second) for the dashboard chart.
+CREATE TABLE IF NOT EXISTS bandwidth_samples (
+  ts     INTEGER PRIMARY KEY,   -- epoch ms
+  rx_bps REAL NOT NULL,
+  tx_bps REAL NOT NULL
+);
 `);
 
 // Seed the first admin from env on a fresh DB (marked as the owner).

@@ -419,6 +419,37 @@ def openvpn_connected(_params):
                    "/etc/openvpn-agent.env, or enable `status` in server.conf.")
 
 
+# ================================================================ system
+def net_stats(_params):
+    """Cumulative per-interface byte counters from /proc/net/dev, plus the
+    default-route interface. The backend samples this to compute throughput."""
+    ifaces = {}
+    try:
+        with open("/proc/net/dev") as f:
+            for line in f.readlines()[2:]:
+                if ":" not in line:
+                    continue
+                name, rest = line.split(":", 1)
+                cols = rest.split()
+                if len(cols) >= 16:
+                    ifaces[name.strip()] = {"rx": int(cols[0]), "tx": int(cols[8])}
+    except OSError as e:
+        raise RpcError(f"cannot read /proc/net/dev: {e}")
+
+    default = None
+    try:
+        with open("/proc/net/route") as f:
+            for line in f.readlines()[1:]:
+                p = line.split()
+                if len(p) >= 2 and p[1] == "00000000":  # default route
+                    default = p[0]
+                    break
+    except OSError:
+        pass
+
+    return {"time": int(time.time() * 1000), "default_iface": default, "interfaces": ifaces}
+
+
 # ================================================================ iptables
 def _chain_for(ip):
     # iptables chain names must be <=29 chars; encode the IP
@@ -689,8 +720,13 @@ METHODS_IPTABLES = {
 }
 
 
+METHODS_SYSTEM = {
+    "net.stats": net_stats,
+}
+
+
 def enabled_methods():
-    m = {}
+    m = dict(METHODS_SYSTEM)  # always available regardless of role
     role = CONF["role"]
     if role in ("openvpn", "both"):
         m.update(METHODS_OPENVPN)
