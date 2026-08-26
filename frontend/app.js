@@ -378,7 +378,7 @@ async function renderDashboardView() {
       ${stat('Port Forward', forwards.length)}
     </div>
     <section class="card" style="margin-top:16px">
-      <h3 class="sc-h" style="margin:0 0 6px">📈 Bandwidth Host <span class="muted" style="font-weight:400">(total interface, bukan hanya user VPN)</span></h3>
+      <h3 class="sc-h" style="margin:0 0 6px">📈 Bandwidth Host</h3>
       <div id="bw-chart"></div>
     </section>
     <h3 class="sc-h" style="margin:22px 0 12px">Status Agent</h3>
