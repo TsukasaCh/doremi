@@ -2,6 +2,8 @@ import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
+import cfg from './config.js';
+import { hashPassword } from './password.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, '..', 'data');
@@ -77,7 +79,25 @@ CREATE TABLE IF NOT EXISTS port_forwards (
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (proto, public_port)
 );
+
+-- Dashboard user accounts (IAM) — separate from VPN users
+CREATE TABLE IF NOT EXISTS dashboard_users (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  username   TEXT UNIQUE NOT NULL,
+  pass_hash  TEXT NOT NULL,
+  role       TEXT NOT NULL DEFAULT 'operator',  -- admin | operator | viewer
+  disabled   INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
+
+// Seed the first admin from env on a fresh DB, so existing logins keep working.
+const haveUsers = db.prepare('SELECT COUNT(*) AS n FROM dashboard_users').get().n;
+if (haveUsers === 0 && cfg.adminUser && cfg.adminPassword) {
+  db.prepare('INSERT INTO dashboard_users (username, pass_hash, role) VALUES (?, ?, ?)')
+    .run(cfg.adminUser, hashPassword(cfg.adminPassword), 'admin');
+  console.log(`[db] seeded initial admin "${cfg.adminUser}" from env`);
+}
 
 // --- migrations (idempotent) ---
 // Store the generated .ovpn so the admin can re-download it later. The file

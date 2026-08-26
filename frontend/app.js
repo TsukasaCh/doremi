@@ -41,12 +41,18 @@ function fmtBytes(n) {
 }
 
 // ---------- Auth ----------
+let CURRENT = { user: null, role: null };
+function canWrite() { return CURRENT.role === 'admin' || CURRENT.role === 'operator'; }
+const ROLE_LABEL = { admin: 'Admin', operator: 'Operator', viewer: 'Viewer' };
+
 async function checkAuth() {
   try {
     const me = await api('/auth/me');
-    $('#whoami').textContent = '👤 ' + me.user;
+    CURRENT = { user: me.user, role: me.role };
+    $('#whoami').innerHTML = `${esc(me.user)} <span class="role-tag">${ROLE_LABEL[me.role] || me.role}</span>`;
     showApp();
   } catch {
+    CURRENT = { user: null, role: null };
     showLogin();
   }
 }
@@ -73,6 +79,8 @@ function showApp() {
   $('#decoy-view').classList.add('hidden');
   $('#login-view').classList.add('hidden');
   $('#app-view').classList.remove('hidden');
+  // Pengaturan (IAM) only for admins
+  $('#nav-admins').classList.toggle('hidden', CURRENT.role !== 'admin');
   showView('users');
   refreshAll();
 }
@@ -192,6 +200,7 @@ const VIEWS = {
   forwards: { title: 'Port Forward', render: renderForwardsView },
   iptables: { title: 'iptables · Proxmox host', render: renderIptablesView },
   audit: { title: 'Audit Log', render: renderAuditView },
+  admins: { title: 'Pengaturan · Akses (IAM)', render: renderAdminsView },
 };
 let CURRENT_VIEW = 'users';
 function showView(name) {
@@ -208,9 +217,8 @@ document.querySelectorAll('.nav-item').forEach((b) =>
 
 // ---------- Users view ----------
 function renderUsersView() {
-  const addBtn = mkBtn('+ User Baru', 'primary', openCreateUser);
-  const refBtn = mkBtn('↻ Refresh', 'ghost', refreshAll);
-  $('#page-actions').append(addBtn, refBtn);
+  if (canWrite()) $('#page-actions').append(mkBtn('+ User Baru', 'primary', openCreateUser));
+  $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', refreshAll));
   $('#view-root').innerHTML = `
     <section class="card">
       <table id="users-table">
@@ -248,14 +256,12 @@ function renderUsers() {
       <td class="actions"></td>`;
     const actions = tr.querySelector('.actions');
 
-    const aclBtn = mkBtn('ACL', 'small', () => openAclModal(u));
-    const renewBtn = mkBtn('Perpanjang', 'small ghost', () => openRenewModal(u));
-    actions.append(aclBtn, renewBtn);
+    actions.append(mkBtn('ACL', 'small', () => openAclModal(u)));
+    if (canWrite()) actions.append(mkBtn('Perpanjang', 'small ghost', () => openRenewModal(u)));
     if (u.has_ovpn) {
       actions.append(mkIconBtn(DOWNLOAD_SVG, 'small icon-btn', 'Unduh .ovpn', () => downloadUserOvpn(u)));
     }
-    const delBtn = mkBtn('Hapus', 'small danger', () => deleteUser(u));
-    actions.append(delBtn);
+    if (canWrite()) actions.append(mkBtn('Hapus', 'small danger', () => deleteUser(u)));
     body.appendChild(tr);
   }
 }
@@ -503,11 +509,11 @@ function renderGroupsView() {
     $('#view-root').innerHTML = `
       <section class="card">
       <p class="muted" style="margin-top:0">Group = kumpulan rule yang bisa dipakai ulang. Edit rule group → semua user yang pakai otomatis ke-update.</p>
-      <div class="acl-add" style="margin:10px 0 16px">
+      ${canWrite() ? `<div class="acl-add" style="margin:10px 0 16px">
         <div style="flex:1"><label>Nama group baru</label><input id="ng-name" placeholder="mis. Web Only" /></div>
         <div style="flex:1.4"><label>Deskripsi (opsional)</label><input id="ng-desc" placeholder="mis. HTTP/HTTPS saja" /></div>
         <button class="primary" id="ng-create">Buat Group</button>
-      </div>
+      </div>` : ''}
       <div id="groups-list">
         ${GROUPS.length === 0 ? '<div class="muted">Belum ada group.</div>' : ''}
         ${GROUPS.map((g) => `
@@ -540,7 +546,8 @@ function renderGroupsView() {
       </div>
       </section>`;
 
-    $('#ng-create').addEventListener('click', () => createGroup(draw));
+    const ngCreate = $('#ng-create');
+    if (ngCreate) ngCreate.addEventListener('click', () => createGroup(draw));
     $('#groups-list').querySelectorAll('[data-delgrp]').forEach((b) =>
       b.addEventListener('click', () => deleteGroup(b.dataset.delgrp, draw)));
     $('#groups-list').querySelectorAll('[data-addrule]').forEach((b) =>
@@ -713,14 +720,14 @@ async function renderForwardsView() {
     $('#view-root').innerHTML = `
       <section class="card">
         <p class="muted" style="margin-top:0">Teruskan port publik host Proxmox ke IP:port internal (DNAT). Cocok buat nambah service CTF tanpa SSH.</p>
-        <div class="acl-add" style="margin:10px 0 18px">
+        ${canWrite() ? `<div class="acl-add" style="margin:10px 0 18px">
           <div><label>Proto</label><select id="pf-proto"><option>tcp</option><option>udp</option></select></div>
           <div><label>Port publik</label><input id="pf-pub" type="number" placeholder="13035" style="width:110px" /></div>
           <div style="flex:1"><label>IP tujuan</label><input id="pf-dip" placeholder="10.10.10.212" /></div>
           <div><label>Port tujuan</label><input id="pf-dport" type="number" placeholder="13035" style="width:110px" /></div>
           <div style="flex:1"><label>Label (opsional)</label><input id="pf-label" placeholder="ctf: mirage" /></div>
           <button class="primary" id="pf-add">Tambah</button>
-        </div>
+        </div>` : ''}
         <h3 style="font-size:14px;margin:6px 0 8px">Dikelola dashboard</h3>
         ${list.length === 0
           ? '<div class="muted">Belum ada port-forward yang dibuat lewat dashboard.</div>'
@@ -739,11 +746,12 @@ async function renderForwardsView() {
         <h3 style="font-size:14px;margin:0 0 4px">Terdeteksi di host <span class="muted" style="font-weight:400">(semua DNAT, termasuk manual/CTF)</span></h3>
         <div id="pf-existing"><div class="muted">Memuat…</div></div>
       </section>`;
-    $('#pf-add').addEventListener('click', addForward);
+    const pfAdd = $('#pf-add');
+    if (pfAdd) pfAdd.addEventListener('click', addForward);
     const rows = $('#pf-managed') ? $('#pf-managed').querySelectorAll('tr') : [];
     list.forEach((f, i) => {
       const cell = rows[i] && rows[i].querySelector('.actions');
-      if (cell) cell.append(mkBtn('Hapus', 'small danger', () => delForward(f)));
+      if (cell && canWrite()) cell.append(mkBtn('Hapus', 'small danger', () => delForward(f)));
     });
     loadExistingForwards();
   } catch (err) {
@@ -792,6 +800,83 @@ async function delForward(f) {
     await api(`/forwards/${f.id}`, { method: 'DELETE' });
     toast('Port-forward dihapus');
     renderForwardsView();
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+// ---------- IAM (Pengaturan) view ----------
+async function renderAdminsView() {
+  $('#page-actions').append(mkBtn('↻ Refresh', 'ghost', renderAdminsView));
+  $('#view-root').innerHTML = '<section class="card"><div class="muted">Memuat…</div></section>';
+  try {
+    const list = await api('/admins');
+    $('#view-root').innerHTML = `
+      <section class="card">
+        <p class="muted" style="margin-top:0">User dashboard & hak aksesnya. <strong>Admin</strong>: semua + kelola user ini. <strong>Operator</strong>: kelola VPN/ACL/forward. <strong>Viewer</strong>: hanya lihat.</p>
+        <div class="acl-add" style="margin:10px 0 18px">
+          <div style="flex:1"><label>Username</label><input id="ad-user" placeholder="mis. operator1" /></div>
+          <div style="flex:1"><label>Password</label><input id="ad-pass" type="password" placeholder="min. 6 karakter" /></div>
+          <div><label>Role</label><select id="ad-role"><option value="operator">operator</option><option value="admin">admin</option><option value="viewer">viewer</option></select></div>
+          <button class="primary" id="ad-add">Buat User</button>
+        </div>
+        <table>
+          <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
+          <tbody>${list.map((u) => `<tr data-uid="${u.id}">
+            <td><strong>${esc(u.username)}</strong>${u.username === CURRENT.user ? ' <span class="muted">(anda)</span>' : ''}</td>
+            <td>
+              <select class="ad-rolesel" ${u.username === CURRENT.user ? 'disabled' : ''}>
+                ${['admin', 'operator', 'viewer'].map((r) => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+              </select>
+            </td>
+            <td><span class="badge ${u.disabled ? 'revoked' : 'active'}">${u.disabled ? 'nonaktif' : 'aktif'}</span></td>
+            <td>${fmtDate(u.created_at)}</td>
+            <td class="actions"></td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </section>`;
+    $('#ad-add').addEventListener('click', createAdmin);
+    list.forEach((u) => {
+      const tr = $(`tr[data-uid="${u.id}"]`);
+      if (!tr) return;
+      tr.querySelector('.ad-rolesel').addEventListener('change', (e) => updateAdmin(u.id, { role: e.target.value }));
+      const cell = tr.querySelector('.actions');
+      cell.append(mkBtn('Reset PW', 'small ghost', () => resetAdminPw(u)));
+      if (u.username !== CURRENT.user) {
+        cell.append(mkBtn(u.disabled ? 'Aktifkan' : 'Nonaktifkan', 'small ghost', () => updateAdmin(u.id, { disabled: !u.disabled }).then(renderAdminsView)));
+        cell.append(mkBtn('Hapus', 'small danger', () => deleteAdmin(u)));
+      }
+    });
+  } catch (err) {
+    $('#view-root').innerHTML = `<section class="card"><div class="error">${esc(err.message)}</div></section>`;
+  }
+}
+async function createAdmin() {
+  const body = { username: $('#ad-user').value.trim(), password: $('#ad-pass').value, role: $('#ad-role').value };
+  try {
+    await api('/admins', { method: 'POST', body: JSON.stringify(body) });
+    toast('User dashboard dibuat');
+    renderAdminsView();
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function updateAdmin(id, patch) {
+  try {
+    await api(`/admins/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+    toast('User diperbarui');
+  } catch (err) { toast(err.message, 'err'); renderAdminsView(); }
+}
+async function resetAdminPw(u) {
+  const pw = prompt(`Password baru untuk "${u.username}" (min. 6 karakter):`);
+  if (pw == null) return;
+  try {
+    await api(`/admins/${u.id}`, { method: 'PATCH', body: JSON.stringify({ password: pw }) });
+    toast('Password direset');
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function deleteAdmin(u) {
+  if (!confirm(`Hapus user dashboard "${u.username}"?`)) return;
+  try {
+    await api(`/admins/${u.id}`, { method: 'DELETE' });
+    toast('User dihapus');
+    renderAdminsView();
   } catch (err) { toast(err.message, 'err'); }
 }
 

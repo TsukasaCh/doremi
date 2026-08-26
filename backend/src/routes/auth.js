@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { Router } from 'express';
-import { checkLogin, issueCookie, clearCookie, requireAuth } from '../auth.js';
-import { audit } from '../db.js';
+import { issueCookie, clearCookie, requireAuth } from '../auth.js';
+import db, { audit } from '../db.js';
+import { verifyPassword } from '../password.js';
 import cfg from '../config.js';
 
 const router = Router();
@@ -27,13 +28,16 @@ router.post('/unlock', (req, res) => {
 router.post('/login', (req, res) => {
   const { user, password } = req.body || {};
   if (!user || !password) return res.status(400).json({ error: 'Missing credentials' });
-  if (!checkLogin(user, password)) {
+  const row = db
+    .prepare('SELECT username, pass_hash, role, disabled FROM dashboard_users WHERE username = ?')
+    .get(user);
+  if (!row || row.disabled || !verifyPassword(password, row.pass_hash)) {
     audit(user, 'login', null, 'failed', false);
-    return res.status(401).json({ error: 'Invalid username or password' });
+    return res.status(401).json({ error: 'Username atau password salah' });
   }
-  issueCookie(res, user);
-  audit(user, 'login', null, 'success');
-  res.json({ ok: true, user });
+  issueCookie(res, row.username);
+  audit(row.username, 'login', null, 'success');
+  res.json({ ok: true, user: row.username, role: row.role });
 });
 
 router.post('/logout', (req, res) => {
@@ -42,7 +46,7 @@ router.post('/logout', (req, res) => {
 });
 
 router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: req.user });
+  res.json({ user: req.user, role: req.userRole });
 });
 
 export default router;

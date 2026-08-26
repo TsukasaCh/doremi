@@ -141,6 +141,8 @@ td.actions { display: flex; gap: 6px; align-items: center; }
 .dot.on { background: var(--green); }
 .dot.off { background: var(--red); }
 .whoami-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#whoami { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; }
+.role-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); padding: 1px 6px; border-radius: 999px; }
 
 .content { flex: 1; min-width: 0; padding: 22px 28px; }
 .page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
