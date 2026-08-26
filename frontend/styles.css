@@ -190,6 +190,12 @@ pre.ovpn { background: #0a0e13; border: 1px solid var(--border); border-radius: 
 .chip-x:hover { background: #2a1a1e; }
 .modal h3 { color: var(--text); }
 
+/* 2FA QR + backup codes */
+.qr-wrap { display: inline-block; background: #fff; padding: 10px; border-radius: 10px; margin: 6px 0 10px; }
+.qr-wrap svg { display: block; width: 190px; height: 190px; }
+.backup-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.backup-grid code { text-align: center; padding: 8px; font-size: 14px; letter-spacing: 1px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+
 /* account settings labels */
 .modal-lbl { display: block; margin: 10px 0 0; color: var(--muted); font-size: 13px; }
 .modal-lbl input { display: block; width: 100%; max-width: 340px; margin-top: 5px; }

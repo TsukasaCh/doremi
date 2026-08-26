@@ -103,6 +103,16 @@ for (const stmt of [
   try { db.exec(stmt); } catch { /* column already exists */ }
 }
 
+// One-time 2FA backup/recovery codes (sha256-hashed).
+db.exec(`
+CREATE TABLE IF NOT EXISTS backup_codes (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id  INTEGER NOT NULL REFERENCES dashboard_users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  used_at  TEXT
+);
+`);
+
 // Seed the first admin from env on a fresh DB (marked as the owner).
 const haveUsers = db.prepare('SELECT COUNT(*) AS n FROM dashboard_users').get().n;
 if (haveUsers === 0 && cfg.adminUser && cfg.adminPassword) {

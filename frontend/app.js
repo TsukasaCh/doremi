@@ -838,7 +838,7 @@ async function renderAccountView() {
     </section>`;
 
   $('#pw-save').addEventListener('click', changeOwnPassword);
-  renderTwofaBox(me.twofa);
+  renderTwofaBox(me);
 }
 
 async function changeOwnPassword() {
@@ -851,18 +851,30 @@ async function changeOwnPassword() {
   } catch (err) { toast(err.message, 'err'); }
 }
 
-function renderTwofaBox(enabled) {
+function renderTwofaBox(me) {
   const box = $('#twofa-box');
-  if (enabled) {
+  if (me.twofa) {
     box.innerHTML = `
-      <p><span class="badge active">Aktif</span> Login memerlukan kode dari aplikasi authenticator.</p>
-      <label class="modal-lbl">Kode 6-digit untuk menonaktifkan<input id="tf-off-code" inputmode="numeric" placeholder="123456" style="max-width:160px" /></label>
-      <div style="margin-top:12px"><button class="danger" id="tf-disable">Nonaktifkan 2FA</button></div>`;
+      <p><span class="badge active">Aktif</span> Login memerlukan kode dari authenticator (atau kode backup).</p>
+      <p class="muted">Kode backup tersisa: <strong>${me.backupCount ?? 0}</strong></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:8px">
+        <label class="modal-lbl" style="margin:0">Kode 2FA / backup<input id="tf-code2" inputmode="text" placeholder="123456" style="max-width:180px" /></label>
+        <button class="ghost" id="tf-regen">Buat ulang kode backup</button>
+        <button class="danger" id="tf-disable">Nonaktifkan 2FA</button>
+      </div>
+      <div id="tf-codes"></div>`;
     $('#tf-disable').addEventListener('click', async () => {
       try {
-        await api('/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ code: $('#tf-off-code').value }) });
+        await api('/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ code: $('#tf-code2').value }) });
         toast('2FA dinonaktifkan');
-        renderTwofaBox(false);
+        renderTwofaBox({ twofa: false });
+      } catch (err) { toast(err.message, 'err'); }
+    });
+    $('#tf-regen').addEventListener('click', async () => {
+      try {
+        const r = await api('/auth/2fa/backup/regenerate', { method: 'POST', body: JSON.stringify({ code: $('#tf-code2').value }) });
+        toast('Kode backup baru dibuat (yang lama tidak berlaku)');
+        showBackupCodes(r.backupCodes, $('#tf-codes'));
       } catch (err) { toast(err.message, 'err'); }
     });
   } else {
@@ -874,22 +886,48 @@ function renderTwofaBox(enabled) {
   }
 }
 
+function showBackupCodes(codes, container) {
+  container.innerHTML = `
+    <div class="card nested" style="margin-top:14px;border-color:var(--amber)">
+      <p style="margin-top:0"><strong>⚠️ Simpan kode backup ini sekarang</strong> — hanya ditampilkan sekali. Tiap kode bisa dipakai <em>satu kali</em> untuk login kalau kehilangan authenticator.</p>
+      <div class="backup-grid">${codes.map((c) => `<code>${esc(c)}</code>`).join('')}</div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="ghost" id="bc-copy">Salin semua</button>
+        <button class="ghost" id="bc-dl">Unduh .txt</button>
+      </div>
+    </div>`;
+  container.querySelector('#bc-copy').addEventListener('click', () => {
+    navigator.clipboard?.writeText(codes.join('\n')).then(() => toast('Kode disalin')).catch(() => toast('Gagal menyalin', 'err'));
+  });
+  container.querySelector('#bc-dl').addEventListener('click', () => {
+    const blob = new Blob([`OpenVPN Manager — kode backup 2FA\n\n${codes.join('\n')}\n`], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'backup-codes.txt'; a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
+
 async function startTwofaEnroll() {
   try {
     const r = await api('/auth/2fa/setup', { method: 'POST' });
     $('#tf-enroll').innerHTML = `
       <div class="card nested" style="margin-top:14px">
-        <p class="muted" style="margin-top:0">Masukkan kunci ini ke aplikasi authenticator (manual entry), lalu ketik kode 6-digit yang muncul.</p>
-        <div class="kv"><span class="kv-k">Kunci (Base32)</span><span class="kv-v"><code>${esc(r.secret)}</code></span></div>
-        <div class="kv"><span class="kv-k">otpauth URI</span><span class="kv-v"><code style="font-size:11px">${esc(r.uri)}</code></span></div>
-        <label class="modal-lbl" style="margin-top:10px">Kode dari authenticator<input id="tf-code" inputmode="numeric" placeholder="123456" style="max-width:160px" /></label>
+        <p class="muted" style="margin-top:0">Scan QR ini dengan Google Authenticator / Authy, lalu ketik kode 6-digit yang muncul.</p>
+        <div class="qr-wrap">${r.qr}</div>
+        <p class="muted" style="font-size:12px">Nggak bisa scan? Masukkan kunci manual: <code>${esc(r.secret)}</code></p>
+        <label class="modal-lbl">Kode dari authenticator<input id="tf-code" inputmode="numeric" placeholder="123456" style="max-width:160px" /></label>
         <div style="margin-top:12px"><button class="primary" id="tf-verify">Verifikasi & Aktifkan</button></div>
+        <div id="tf-codes"></div>
       </div>`;
     $('#tf-verify').addEventListener('click', async () => {
       try {
-        await api('/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ secret: r.secret, code: $('#tf-code').value }) });
+        const res = await api('/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ secret: r.secret, code: $('#tf-code').value }) });
         toast('2FA aktif! Lain kali login butuh kode.');
-        renderTwofaBox(true);
+        showBackupCodes(res.backupCodes, $('#tf-codes'));
+        // Reflect enabled state; keep the backup codes visible above.
+        const codesHtml = $('#tf-codes').innerHTML;
+        renderTwofaBox({ twofa: true, backupCount: res.backupCodes.length });
+        $('#tf-codes') && ($('#tf-codes').innerHTML = codesHtml);
       } catch (err) { toast(err.message, 'err'); }
     });
   } catch (err) { toast(err.message, 'err'); }
