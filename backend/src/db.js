@@ -87,16 +87,32 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
   pass_hash  TEXT NOT NULL,
   role       TEXT NOT NULL DEFAULT 'operator',  -- admin | operator | viewer
   disabled   INTEGER NOT NULL DEFAULT 0,
+  is_owner   INTEGER NOT NULL DEFAULT 0,         -- protected superadmin (only one)
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `);
 
-// Seed the first admin from env on a fresh DB, so existing logins keep working.
+// Migration for DBs created before the is_owner column existed.
+try { db.exec('ALTER TABLE dashboard_users ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0'); }
+catch { /* column already exists */ }
+
+// Seed the first admin from env on a fresh DB (marked as the owner).
 const haveUsers = db.prepare('SELECT COUNT(*) AS n FROM dashboard_users').get().n;
 if (haveUsers === 0 && cfg.adminUser && cfg.adminPassword) {
-  db.prepare('INSERT INTO dashboard_users (username, pass_hash, role) VALUES (?, ?, ?)')
+  db.prepare('INSERT INTO dashboard_users (username, pass_hash, role, is_owner) VALUES (?, ?, ?, 1)')
     .run(cfg.adminUser, hashPassword(cfg.adminPassword), 'admin');
-  console.log(`[db] seeded initial admin "${cfg.adminUser}" from env`);
+  console.log(`[db] seeded owner "${cfg.adminUser}" from env`);
+}
+
+// Backfill: ensure exactly one owner exists (for DBs seeded before this change).
+if (db.prepare('SELECT COUNT(*) AS n FROM dashboard_users WHERE is_owner = 1').get().n === 0) {
+  const target =
+    db.prepare('SELECT id FROM dashboard_users WHERE username = ?').get(cfg.adminUser) ||
+    db.prepare("SELECT id FROM dashboard_users WHERE role = 'admin' ORDER BY id LIMIT 1").get();
+  if (target) {
+    db.prepare('UPDATE dashboard_users SET is_owner = 1, role = ? WHERE id = ?').run('admin', target.id);
+    console.log(`[db] backfilled owner flag on user id ${target.id}`);
+  }
 }
 
 // --- migrations (idempotent) ---

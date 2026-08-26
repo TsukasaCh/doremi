@@ -8,7 +8,7 @@ const ROLES = new Set(['admin', 'operator', 'viewer']);
 const NAME_RE = /^[a-zA-Z0-9_.-]{2,32}$/;
 
 function serialize(u) {
-  return { id: u.id, username: u.username, role: u.role, disabled: !!u.disabled, created_at: u.created_at };
+  return { id: u.id, username: u.username, role: u.role, disabled: !!u.disabled, is_owner: !!u.is_owner, created_at: u.created_at };
 }
 function adminCount() {
   return db.prepare("SELECT COUNT(*) AS n FROM dashboard_users WHERE role = 'admin' AND disabled = 0").get().n;
@@ -41,6 +41,15 @@ router.patch('/:id', (req, res) => {
   if (!u) return res.status(404).json({ error: 'Not found' });
   const { role, password, disabled } = req.body || {};
 
+  // Owner protection: only the owner may touch the owner account, and even then
+  // their role/enabled status is locked (owner stays admin & active).
+  if (u.is_owner) {
+    if (req.userId !== u.id)
+      return res.status(403).json({ error: 'Akun owner tidak bisa diubah oleh admin lain' });
+    if ((role !== undefined && role !== 'admin') || disabled === true)
+      return res.status(400).json({ error: 'Owner tidak bisa diturunkan atau dinonaktifkan' });
+  }
+
   // Guard against locking everyone out of admin.
   const losingAdmin = u.role === 'admin' && !u.disabled &&
     ((role && role !== 'admin') || disabled === true);
@@ -67,6 +76,7 @@ router.patch('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   const u = db.prepare('SELECT * FROM dashboard_users WHERE id = ?').get(req.params.id);
   if (!u) return res.status(404).json({ error: 'Not found' });
+  if (u.is_owner) return res.status(403).json({ error: 'Akun owner tidak bisa dihapus' });
   if (u.id === req.userId) return res.status(400).json({ error: 'Tidak bisa menghapus akun sendiri' });
   if (u.role === 'admin' && !u.disabled && adminCount() <= 1)
     return res.status(400).json({ error: 'Tidak bisa menghapus admin terakhir' });

@@ -811,7 +811,7 @@ async function renderAdminsView() {
     const list = await api('/admins');
     $('#view-root').innerHTML = `
       <section class="card">
-        <p class="muted" style="margin-top:0">User dashboard & hak aksesnya. <strong>Admin</strong>: semua + kelola user ini. <strong>Operator</strong>: kelola VPN/ACL/forward. <strong>Viewer</strong>: hanya lihat.</p>
+        <p class="muted" style="margin-top:0"><strong>Owner</strong>: superadmin, tidak bisa diubah/dihapus admin lain. <strong>Admin</strong>: semua + kelola user ini. <strong>Operator</strong>: kelola VPN/ACL/forward. <strong>Viewer</strong>: hanya lihat.</p>
         <div class="acl-add" style="margin:10px 0 18px">
           <div style="flex:1"><label>Username</label><input id="ad-user" placeholder="mis. operator1" /></div>
           <div style="flex:1"><label>Password</label><input id="ad-pass" type="password" placeholder="min. 6 karakter" /></div>
@@ -821,9 +821,9 @@ async function renderAdminsView() {
         <table>
           <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
           <tbody>${list.map((u) => `<tr data-uid="${u.id}">
-            <td><strong>${esc(u.username)}</strong>${u.username === CURRENT.user ? ' <span class="muted">(anda)</span>' : ''}</td>
+            <td><strong>${esc(u.username)}</strong>${u.is_owner ? ' <span class="badge active" title="Superadmin, tidak bisa diubah admin lain">Owner</span>' : ''}${u.username === CURRENT.user ? ' <span class="muted">(anda)</span>' : ''}</td>
             <td>
-              <select class="ad-rolesel" ${u.username === CURRENT.user ? 'disabled' : ''}>
+              <select class="ad-rolesel" ${(u.username === CURRENT.user || u.is_owner) ? 'disabled' : ''}>
                 ${['admin', 'operator', 'viewer'].map((r) => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}
               </select>
             </td>
@@ -837,10 +837,14 @@ async function renderAdminsView() {
     list.forEach((u) => {
       const tr = $(`tr[data-uid="${u.id}"]`);
       if (!tr) return;
-      tr.querySelector('.ad-rolesel').addEventListener('change', (e) => updateAdmin(u.id, { role: e.target.value }));
+      const sel = tr.querySelector('.ad-rolesel');
+      if (!sel.disabled) sel.addEventListener('change', (e) => updateAdmin(u.id, { role: e.target.value }));
       const cell = tr.querySelector('.actions');
-      cell.append(mkBtn('Reset PW', 'small ghost', () => resetAdminPw(u)));
-      if (u.username !== CURRENT.user) {
+      const isSelf = u.username === CURRENT.user;
+      // Owner can only be managed by the owner themselves.
+      const canManage = !u.is_owner || isSelf;
+      if (canManage) cell.append(mkBtn('Reset PW', 'small ghost', () => resetAdminPw(u)));
+      if (!isSelf && !u.is_owner) {
         cell.append(mkBtn(u.disabled ? 'Aktifkan' : 'Nonaktifkan', 'small ghost', () => updateAdmin(u.id, { disabled: !u.disabled }).then(renderAdminsView)));
         cell.append(mkBtn('Hapus', 'small danger', () => deleteAdmin(u)));
       }
