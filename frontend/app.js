@@ -820,22 +820,33 @@ async function renderAccountView() {
   let me;
   try { me = await api('/auth/me'); } catch (e) { $('#view-root').innerHTML = `<section class="card"><div class="error">${esc(e.message)}</div></section>`; return; }
 
+  const initial = (me.user || '?').charAt(0).toUpperCase();
   $('#view-root').innerHTML = `
-    <section class="card" style="max-width:560px">
-      <h3 style="margin:0 0 4px;font-size:15px">Akun: ${esc(me.user)}</h3>
-      <p class="muted" style="margin:0 0 16px">Role: ${esc(ROLE_LABEL[me.role] || me.role)}</p>
+    <div class="settings">
+      <section class="card settings-card">
+        <div class="sc-head">
+          <div class="avatar">${esc(initial)}</div>
+          <div>
+            <div class="sc-title">${esc(me.user)}</div>
+            <div class="muted" style="font-size:13px">Akun dashboard</div>
+          </div>
+          <span class="role-tag" style="margin-left:auto">${esc(ROLE_LABEL[me.role] || me.role)}</span>
+        </div>
+      </section>
 
-      <h3 style="font-size:14px;margin:0 0 8px">Ganti Password</h3>
-      <label class="modal-lbl">Password saat ini<input id="pw-cur" type="password" /></label>
-      <label class="modal-lbl">Password baru<input id="pw-new" type="password" placeholder="min. 6 karakter" /></label>
-      <label class="modal-lbl">Ulangi password baru<input id="pw-new2" type="password" /></label>
-      <div style="margin-top:12px"><button class="primary" id="pw-save">Simpan Password</button></div>
+      <section class="card settings-card">
+        <h3 class="sc-h">🔑 Ganti Password</h3>
+        <div class="field"><label>Password saat ini</label><input id="pw-cur" type="password" autocomplete="current-password" /></div>
+        <div class="field"><label>Password baru</label><input id="pw-new" type="password" autocomplete="new-password" placeholder="min. 6 karakter" /></div>
+        <div class="field"><label>Ulangi password baru</label><input id="pw-new2" type="password" autocomplete="new-password" /></div>
+        <button class="primary" id="pw-save">Simpan Password</button>
+      </section>
 
-      <hr style="border:none;border-top:1px solid var(--border);margin:24px 0" />
-
-      <h3 style="font-size:14px;margin:0 0 8px">Autentikasi Dua Faktor (2FA)</h3>
-      <div id="twofa-box"></div>
-    </section>`;
+      <section class="card settings-card">
+        <h3 class="sc-h">🛡️ Autentikasi Dua Faktor (2FA)</h3>
+        <div id="twofa-box"></div>
+      </section>
+    </div>`;
 
   $('#pw-save').addEventListener('click', changeOwnPassword);
   renderTwofaBox(me);
