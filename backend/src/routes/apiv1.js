@@ -89,12 +89,15 @@ router.get('/vpn/:name/config', (req, res) => {
   res.json({ name: u.name, ovpn: u.ovpn });
 });
 
-// DELETE /api/v1/vpn/:name — revoke + remove
-router.delete('/vpn/:name', async (req, res) => {
+// Revoke + remove a profile by name. DELETE is canonical; POST /revoke is an
+// alias for clients that prefer it.
+async function revokeByName(req, res) {
   const u = db.prepare('SELECT * FROM users WHERE name = ?').get(req.params.name);
   if (!u) return res.status(404).json({ error: 'Not found' });
   const errors = await removeVpnUser(u, 'api:' + req.apiKey.name);
-  res.json({ ok: true, ...(errors.length ? { warnings: errors } : {}) });
-});
+  res.json({ ok: true, revoked: u.name, ...(errors.length ? { warnings: errors } : {}) });
+}
+router.delete('/vpn/:name', revokeByName);
+router.post('/vpn/:name/revoke', revokeByName);
 
 export default router;
