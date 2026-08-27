@@ -1213,8 +1213,28 @@ async function renderAdminsView() {
             <td class="actions"></td>
           </tr>`).join('')}</tbody>
         </table>
+      </section>
+      <section class="card" style="margin-top:16px">
+        <h3 class="sc-h" style="margin:0 0 4px">🔌 API Keys</h3>
+        <p class="muted" style="margin:0 0 14px">Untuk integrasi server-to-server (mis. platform CTF auto-provision VPN lab). Kirim header <code>Authorization: Bearer &lt;key&gt;</code> ke <code>/api/v1/vpn</code>.</p>
+        <div class="acl-add" style="margin-bottom:14px">
+          <div style="flex:1"><label>Nama key</label><input id="ak-name" placeholder="mis. ctf-platform" /></div>
+          <button class="primary" id="ak-create">Buat Key</button>
+        </div>
+        <div id="ak-new"></div>
+        <div id="ak-list"><div class="muted">Memuat…</div></div>
+        <details style="margin-top:14px"><summary class="muted" style="cursor:pointer">Contoh pemakaian (curl)</summary>
+          <pre class="ovpn" style="margin-top:8px">curl -X POST http://10.10.10.110:8080/api/v1/vpn \\
+  -H "Authorization: Bearer &lt;API_KEY&gt;" \\
+  -H "Content-Type: application/json" \\
+  -d '{"ttl_minutes":120,"acl":[{"action":"allow","dst":"10.10.10.0/24"},{"action":"deny","dst":"0.0.0.0/0"}]}'
+# → { "name", "common_name", "static_ip", "expires_at", "ovpn" }
+# revoke: curl -X DELETE .../api/v1/vpn/&lt;name&gt; -H "Authorization: Bearer &lt;API_KEY&gt;"</pre>
+        </details>
       </section>`;
     $('#ad-add').addEventListener('click', createAdmin);
+    $('#ak-create').addEventListener('click', createApiKey);
+    loadApiKeys();
     list.forEach((u) => {
       const tr = $(`tr[data-uid="${u.id}"]`);
       if (!tr) return;
@@ -1255,6 +1275,54 @@ async function resetAdminPw(u) {
   try {
     await api(`/admins/${u.id}`, { method: 'PATCH', body: JSON.stringify({ password: pw }) });
     toast('Password direset');
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function loadApiKeys() {
+  const el = $('#ak-list');
+  if (!el) return;
+  try {
+    const keys = await api('/apikeys');
+    el.innerHTML = keys.length === 0
+      ? '<div class="muted">Belum ada API key.</div>'
+      : `<table>
+          <thead><tr><th>Nama</th><th>Prefix</th><th>Status</th><th>Dibuat</th><th>Terakhir dipakai</th><th></th></tr></thead>
+          <tbody>${keys.map((k) => `<tr data-kid="${k.id}">
+            <td><strong>${esc(k.name)}</strong></td>
+            <td><code>${esc(k.key_prefix)}…</code></td>
+            <td><span class="badge ${k.disabled ? 'revoked' : 'active'}">${k.disabled ? 'nonaktif' : 'aktif'}</span></td>
+            <td>${fmtDate(k.created_at)}</td>
+            <td class="muted">${k.last_used ? fmtDate(k.last_used) : '—'}</td>
+            <td class="actions"></td>
+          </tr>`).join('')}</tbody>
+        </table>`;
+    keys.forEach((k) => {
+      const cell = $(`tr[data-kid="${k.id}"] .actions`);
+      if (!cell) return;
+      cell.append(mkBtn(k.disabled ? 'Aktifkan' : 'Nonaktifkan', 'small ghost',
+        () => api(`/apikeys/${k.id}`, { method: 'PATCH', body: JSON.stringify({ disabled: !k.disabled }) }).then(loadApiKeys).catch((e) => toast(e.message, 'err'))));
+      cell.append(mkBtn('Hapus', 'small danger', () => {
+        if (!confirm(`Hapus API key "${k.name}"? Integrasi yang pakai key ini akan berhenti.`)) return;
+        api(`/apikeys/${k.id}`, { method: 'DELETE' }).then(loadApiKeys).catch((e) => toast(e.message, 'err'));
+      }));
+    });
+  } catch (err) { el.innerHTML = `<div class="error" style="margin:0">${esc(err.message)}</div>`; }
+}
+async function createApiKey() {
+  const name = $('#ak-name').value.trim();
+  if (!name) return toast('Nama key wajib', 'err');
+  try {
+    const r = await api('/apikeys', { method: 'POST', body: JSON.stringify({ name }) });
+    $('#ak-name').value = '';
+    $('#ak-new').innerHTML = `
+      <div class="card nested" style="margin-bottom:14px;border-color:var(--amber)">
+        <p style="margin-top:0"><strong>⚠️ Salin key ini sekarang</strong> — hanya ditampilkan sekali:</p>
+        <div style="display:flex;gap:8px;align-items:center">
+          <code style="flex:1;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;word-break:break-all">${esc(r.key)}</code>
+          <button class="ghost small" id="ak-copy">Salin</button>
+        </div>
+      </div>`;
+    $('#ak-copy').addEventListener('click', () => navigator.clipboard?.writeText(r.key).then(() => toast('Key disalin')));
+    loadApiKeys();
   } catch (err) { toast(err.message, 'err'); }
 }
 async function resetAdmin2fa(u) {

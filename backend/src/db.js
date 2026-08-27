@@ -118,6 +118,17 @@ CREATE TABLE IF NOT EXISTS bandwidth_samples (
   rx_bps REAL NOT NULL,
   tx_bps REAL NOT NULL
 );
+
+-- API keys for server-to-server access (e.g. CTF platform provisioning VPNs).
+CREATE TABLE IF NOT EXISTS api_keys (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  key_prefix TEXT NOT NULL,   -- shown in the UI, e.g. "ovpnk_ab12cd"
+  key_hash   TEXT NOT NULL,   -- sha256 of the full key
+  disabled   INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used  TEXT
+);
 `);
 
 // Seed the first admin from env on a fresh DB (marked as the owner).

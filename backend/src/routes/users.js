@@ -1,12 +1,10 @@
 import { Router } from 'express';
 import db, { audit } from '../db.js';
-import { openvpnAgent, proxmoxAgent } from '../agentClient.js';
-import { allocateStaticIp } from '../ipalloc.js';
+import { openvpnAgent } from '../agentClient.js';
 import { applyUserAcl } from './acl.js';
+import { createVpnUser, removeVpnUser } from '../userService.js';
 
 const router = Router();
-
-const NAME_RE = /^[a-zA-Z0-9_.-]{2,40}$/;
 
 function serializeUser(u) {
   const rules = db
@@ -35,46 +33,14 @@ router.get('/', (req, res) => {
 // body: { name, expiryDays?, note? }
 router.post('/', async (req, res) => {
   const { name, expiryDays, note } = req.body || {};
-  if (!NAME_RE.test(name || '')) {
-    return res.status(400).json({ error: 'Invalid name (2-40 chars: letters, digits, . _ -)' });
-  }
-  const exists = db.prepare('SELECT 1 FROM users WHERE name = ?').get(name);
-  if (exists) return res.status(409).json({ error: 'User already exists' });
-
   const days = expiryDays ? parseInt(expiryDays, 10) : null;
-  let staticIp;
+  const expiresAt = days ? new Date(Date.now() + days * 86400000).toISOString() : null;
   try {
-    staticIp = allocateStaticIp();
+    const { user, ovpn } = await createVpnUser({ name, expiresAt, note: note || null, certDays: days, actor: req.user });
+    res.status(201).json({ user: serializeUser(user), ovpn });
   } catch (e) {
-    return res.status(507).json({ error: e.message });
+    res.status(e.status || 500).json({ error: e.message });
   }
-
-  let ovpn;
-  try {
-    // 1) generate cert/key + .ovpn on the OpenVPN host
-    const r = await openvpnAgent.createUser(name, days);
-    ovpn = r.ovpn;
-    // 2) pin a static IP for this user via client-config-dir
-    await openvpnAgent.setCcd(name, staticIp);
-  } catch (e) {
-    audit(req.user, 'create_user', name, e.message, false);
-    return res.status(502).json({ error: `OpenVPN agent: ${e.message}` });
-  }
-
-  const expiresAt = days
-    ? new Date(Date.now() + days * 86400000).toISOString()
-    : null;
-
-  const info = db
-    .prepare(
-      'INSERT INTO users (name, static_ip, expires_at, note, ovpn) VALUES (?, ?, ?, ?, ?)'
-    )
-    .run(name, staticIp, expiresAt, note || null, ovpn || null);
-
-  audit(req.user, 'create_user', name, `ip=${staticIp} expires=${expiresAt || 'never'}`);
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
-  // .ovpn is returned once here so the admin can download/hand it to the user
-  res.status(201).json({ user: serializeUser(user), ovpn });
 });
 
 // GET /api/users/:id/ovpn  — re-download the stored .ovpn config
@@ -133,17 +99,7 @@ router.patch('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!u) return res.status(404).json({ error: 'Not found' });
-
-  const errors = [];
-  try { await openvpnAgent.revokeUser(u.name); } catch (e) { errors.push(`revoke: ${e.message}`); }
-  try { await openvpnAgent.removeCcd(u.name); } catch (e) { errors.push(`ccd: ${e.message}`); }
-  if (u.static_ip) {
-    try { await proxmoxAgent.removeAcl(u.static_ip); } catch (e) { errors.push(`iptables: ${e.message}`); }
-  }
-
-  db.prepare('DELETE FROM users WHERE id = ?').run(u.id); // cascades to acl_rules
-  audit(req.user, 'delete_user', u.name, errors.length ? errors.join('; ') : 'ok', errors.length === 0);
-
+  const errors = await removeVpnUser(u, req.user);
   if (errors.length) {
     return res.status(207).json({ ok: true, warning: 'Removed from DB but agent steps had errors', errors });
   }
