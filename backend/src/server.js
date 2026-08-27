@@ -21,6 +21,7 @@ import agentRoutes from './routes/agents.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+app.set('trust proxy', true); // behind nginx: honor X-Forwarded-Proto/For
 app.use(express.json());
 app.use(cookieParser());
 

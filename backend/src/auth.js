@@ -28,7 +28,12 @@ function verify(token) {
 
 export function issueCookie(res, user) {
   const token = sign({ user, exp: Date.now() + MAX_AGE_MS });
-  res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'lax', maxAge: MAX_AGE_MS });
+  res.cookie(COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: cfg.cookieSecure,
+    maxAge: MAX_AGE_MS,
+  });
 }
 
 export function clearCookie(res) {

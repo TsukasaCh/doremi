@@ -10,6 +10,9 @@ const cfg = {
   // and only reveals the real login when this exact code is submitted. Checked
   // server-side, so it never ships to the browser. Empty = decoy disabled.
   unlockCode: process.env.UNLOCK_CODE || '',
+  // Set true once served over HTTPS (behind a TLS reverse proxy) so session
+  // cookies get the Secure flag. Keep false while testing over plain HTTP.
+  cookieSecure: /^(1|true|yes)$/i.test(process.env.COOKIE_SECURE || ''),
 
   agents: {
     openvpn: {
