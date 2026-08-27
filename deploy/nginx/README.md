@@ -11,44 +11,30 @@ browser / CTF backend ──HTTPS──► 10.10.10.105 (nginx)
 ```
 
 ## 1. DNS
-Point `vvpn.redlimit.id` to the nginx VM `10.10.10.105`. Since everything is
-internal, use internal DNS, or a Cloudflare A record in **DNS-only (grey cloud)**
-mode. (For the DNS‑01 cert below, the A record's value is irrelevant — validation
-is a TXT record — so the cert issues even for a private IP.)
+Point `vvpn.redlimit.id` at the nginx VM (in the Cloudflare dashboard, an A
+record). For the HTTP‑01 cert below, the record must be reachable from the
+internet on port 80 during issuance — if it's proxied (orange cloud), set it to
+**DNS‑only (grey cloud)** while issuing, then switch back to Full(strict) after.
 
-## 2. TLS certificate (pick one)
-
-### A) Let's Encrypt via Cloudflare DNS‑01 — recommended (trusted, box stays internal)
-```bash
-sudo apt install -y certbot python3-certbot-dns-cloudflare
-sudo tee /root/.cloudflare.ini >/dev/null <<'EOF'
-dns_cloudflare_api_token = <CLOUDFLARE_API_TOKEN_with_DNS_edit>
-EOF
-sudo chmod 600 /root/.cloudflare.ini
-sudo certbot certonly --dns-cloudflare \
-  --dns-cloudflare-credentials /root/.cloudflare.ini \
-  -d vvpn.redlimit.id
-```
-Auto-renew is handled by the certbot systemd timer.
-
-### B) Cloudflare Origin Certificate (if you proxy the subdomain through Cloudflare)
-Create an Origin cert in the Cloudflare dashboard, save cert+key on the VM, and
-point `ssl_certificate` / `ssl_certificate_key` in the conf at them.
-
-### C) Self-signed (quick, but browser warns unless the CA is trusted)
-```bash
-sudo openssl req -x509 -nodes -days 825 -newkey rsa:2048 \
-  -keyout /etc/ssl/private/vvpn.key -out /etc/ssl/certs/vvpn.crt \
-  -subj "/CN=vvpn.redlimit.id"
-```
-Then set the two `ssl_certificate*` paths in the conf accordingly.
-
-## 3. Install the site
+## 2. Install the site (HTTP first)
 ```bash
 sudo cp vvpn.redlimit.id.conf /etc/nginx/sites-available/
 sudo ln -s /etc/nginx/sites-available/vvpn.redlimit.id.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
+
+## 3. TLS with certbot (HTTP‑01 — no Cloudflare token needed)
+```bash
+sudo certbot --nginx -d vvpn.redlimit.id
+```
+certbot proves control by answering on port 80, then **rewrites the conf in
+place**: it adds the `listen 443 ssl` server with the cert paths and turns the
+port‑80 block into an HTTP→HTTPS redirect. Auto‑renew runs via the certbot timer.
+
+> Only if this VM is NOT reachable from the internet on port 80: use DNS‑01
+> manually — `sudo certbot certonly --manual --preferred-challenges dns -d
+> vvpn.redlimit.id` — certbot prints a TXT record you add in the Cloudflare
+> dashboard by hand (renewals are manual too). No API token required.
 
 ## 4. Lock the backend to the proxy (optional, recommended)
 On the OpenVPN Manager VM `10.10.10.110`, only allow port 8080 from the nginx VM:
